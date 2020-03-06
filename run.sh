@@ -2,7 +2,10 @@
 
 if [ -z "$2" ] 
 then
-echo "ERROR: No arguments passed."
+echo ""
+echo "ERROR: Not enough arguments passed."
+echo "Usage: ./run.sh DIR javaFileName [args]"
+echo ""
 exit 1
 fi
 cd $1 && \

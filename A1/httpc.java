@@ -13,6 +13,7 @@ public class httpc {
 
     // HTTP request components
     private String host = "";
+    private int port = -1;
     private String query = "";
     private String page = "";
     private String additionalHeaders = "";
@@ -188,7 +189,11 @@ public class httpc {
             int indexOfFirstNewLine = responseSubstr.indexOf("\r");
             String newLocation = responseSubstr.substring(0, indexOfFirstNewLine);
 
-            parseURL(newLocation);
+            try {
+                parseURL(newLocation);
+            } catch(Exception e) {
+                System.out.println(e);
+            }
 
             return true;
         }
@@ -221,21 +226,30 @@ public class httpc {
      * Parses a URL into `host` (www.google.ca), `page` (/get) and `query` (?key=value) 
      * @param fullURL A URL to be parsed.
      */
-    private void parseURL(String fullURL) {
+    private void parseURL(String fullURL) throws Exception {
+        String URL;
         String http = "http://";
         int indexOfHTTP = fullURL.indexOf(http);
 
+        // http:// can either be at the beginning of the URL or not there at all
+        if (indexOfHTTP != 0 && indexOfHTTP != -1 ) {
+            throw new Exception("Invalid URL: " + fullURL);
+        }
+
         // Remove http:// prefix
         if (indexOfHTTP != -1)
-            fullURL = fullURL.substring(indexOfHTTP + http.length());
+            URL = fullURL.substring(indexOfHTTP + http.length());
+        else
+            URL = fullURL;
 
         // Find index of first / and ? to identify the page
-        int indexOfQueury = fullURL.indexOf('?');
-        int indexOfSlash = fullURL.indexOf('/');
+        int indexOfQuery = URL.indexOf('?');
+        int indexOfSlash = URL.indexOf('/');
+        int indexOfPort  = URL.indexOf(':'); 
 
         // If ? doesn't exist in URL, then no query exists in the URL and set indexOfQuery to length of URL
-        if (indexOfQueury == -1)
-            indexOfQueury = fullURL.length();
+        if (indexOfQuery == -1)
+            indexOfQuery = URL.length();
 
         int URLEndPoint;
 
@@ -243,20 +257,27 @@ public class httpc {
         if (indexOfSlash == -1) {
             // URL has no page, eg. "www.example.com" or "www.example.com?key=value"
             this.page = "/";
-            URLEndPoint = indexOfQueury;
-        } else {
+            URLEndPoint = indexOfQuery;
+        } else { 
             // URL has a page to navigate, eg. "www.example.com/path/to/path" or "www.example.com/path/to/path?key=value"
-            this.page = fullURL.substring(indexOfSlash, indexOfQueury);
+            this.page = URL.substring(indexOfSlash, indexOfQuery);
             URLEndPoint = indexOfSlash;
         }
-        
+
         // Only set this.query if the new query is nonempty.
-        String newQuery = fullURL.substring(indexOfQueury);
+        String newQuery = URL.substring(indexOfQuery);
         if (!newQuery.equals(""))
             this.query = newQuery;
+        
+        String newHost;
 
-        // Only set this.host if the new host is nonempty.
-        String newHost = fullURL.substring(0, URLEndPoint);
+        if (indexOfPort != -1) {
+            this.port = Integer.parseInt(URL.substring(indexOfPort + 1, URLEndPoint));
+            newHost = URL.substring(0, indexOfPort);
+        } else {
+            // Only set this.host if the new host is nonempty.
+            newHost = URL.substring(0, URLEndPoint);
+        }
         if (!newHost.equals(""))
             this.host = newHost;
     }
