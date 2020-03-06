@@ -5,5 +5,6 @@ then
 echo "ERROR: No arguments passed."
 exit 1
 fi
-javac $1.java
-java $1 ${@:2}
+cd $1 && \
+javac $2.java && \
+java $2 ${@:3}

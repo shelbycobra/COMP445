@@ -27,7 +27,7 @@ public class httpc {
         // Print out help get or help post
         if (args.length >= 2) {
             if (args[1].equals("get")) {
-                System.out.println("\nusage: java HTTPCurl get [-v] [-h key:value] URL\n"
+                System.out.println("\nusage: java httpc get [-v] [-h key:value] URL\n"
                     + "\nGet executes a HTTP GET request for a given URL.\n\n"
                     + "\t-v\tPrints the detail of the response such as protocol, status, and headers.\n"
                     + "\t-h\tkey:value Associates headers to HTTP Request with the format 'key:value'.\n"
@@ -51,14 +51,14 @@ public class httpc {
         }
 
         // Print out help
-        System.out.println("\nHTTPCurl is a curl-like application but supports HTTP protocol only.\n"
+        System.out.println("\nhttpc is a curl-like application but supports HTTP protocol only.\n"
                 + "\nUsage:\n"
-                + "\tjava HTTPCurl command [arguments]\n"
+                + "\tjava httpc command [arguments]\n"
                 + "\nThe commands are:\n"
                 + "\tget\texecutes a HTTP GET request and prints the response.\n"
                 + "\tpost\texecutes a HTTP POST request and prints the response.\n"
                 + "\thelp\tprints this screen.\n"
-                + "\nUse \"java HTTPCurl help [command]\" for more information about a command.\n"
+                + "\nUse \"java httpc help [command]\" for more information about a command.\n"
             );
         System.exit(0);
     }
@@ -85,7 +85,7 @@ public class httpc {
                 index++;
                 StringBuilder headers = new StringBuilder();
                 headers.append(args[index]).append("\r\n");
-                this.additionalHeaders += args[index].toString();
+                this.additionalHeaders += headers.toString();
             } else if (arg.equals("-d")) {
                 index++;
                 this.body = args[index];
@@ -284,11 +284,11 @@ public class httpc {
      * 
      */
     public static void main (String[] args) {
-        HTTPCurl httpc = new HTTPCurl();
+        httpc httpc = new httpc();
 
         if (args.length == 0 || (!args[0].equals("get") && !args[0].equals("post") && !args[0].equals("help"))) {
             System.out.println("\nERROR:  No get, post or help method was provided.");
-            System.out.println("\tRun `java HTTPCurl help` for guidance.");
+            System.out.println("\tRun `java httpc help` for guidance.");
             System.exit(1);
         }
 
@@ -312,7 +312,7 @@ public class httpc {
             System.out.println(e);
         } catch (Exception e) {
             System.out.println("\nERROR:  " + e);
-            System.out.println("\tRun `java HTTPCurl help` for guidance.");
+            System.out.println("\tRun `java httpc help` for guidance.");
         }
     }
 }
