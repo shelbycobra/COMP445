@@ -1,13 +1,12 @@
 #!/bin/bash
 
-if [ -z "$2" ] 
+if [ -z "$1" ] 
 then
 echo ""
 echo "ERROR: Not enough arguments passed."
-echo "Usage: ./run.sh DIR javaFileName [args]"
+echo "Usage: ./run.sh javaFileName [args]"
 echo ""
 exit 1
 fi
-cd $1 && \
-javac $2.java && \
-java $2 ${@:3}
+javac $1.java
+java $1 ${@:2}
