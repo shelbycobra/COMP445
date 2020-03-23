@@ -8,5 +8,5 @@ echo "Usage: ./run.sh javaFileName [args]"
 echo ""
 exit 1
 fi
-javac $1.java
-java $1 ${@:2}
+javac -sourcepath src src/$1.java -d bin
+java -cp bin/ $1 ${@:2}

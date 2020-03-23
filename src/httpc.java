@@ -6,7 +6,7 @@ import java.lang.Exception;
 
 
 public class httpc {
-    private Socket socket;
+    private TCPClientSocket socket;
     private InputStream in;
     private OutputStream out;
     private boolean verbose = false;
@@ -66,7 +66,7 @@ public class httpc {
 
     /**
      * Parses arguments based on the options passed via the command line.
-     *  
+     *
      * @throws Exception If -d or -f are used together or a URL was never passed.
      * @param args       An array of arguments.
      */
@@ -96,7 +96,7 @@ public class httpc {
                 while(true) {
                     index++;
                     String word = args[index];
-                    
+
                     if (word.matches("^-[a-z]$") // Matches an option
                     || word.matches("(http:\\/\\/)?[\\w\\d]+\\.[\\w\\d\\.]+[:?\\d]?[\\w\\d.\\/]+\\/?\\??[\\w\\d=&]*") // Matches a URL
                     || word.matches("localhost:[0-9]+")) // Matches a localhost url
@@ -152,13 +152,13 @@ public class httpc {
         out = socket.getOutputStream();
 
         String request = buildRequest(type);
-        
+
         out.write(request.getBytes());
         out.flush();
 
         StringBuilder response = new StringBuilder();
         int data = in.read();
-    
+
         while(data != -1 ) {
             response.append((char)data);
             data = in.read();
@@ -202,7 +202,7 @@ public class httpc {
 
         int indexOfCode = this.response.indexOf(httpStr) + httpStr.length();
 
-        if (indexOfCode == 8 || this.response.length() < 3) 
+        if (indexOfCode == 8 || this.response.length() < 3)
             return false;
 
         if (this.response.charAt(indexOfCode) == '3') {
@@ -242,7 +242,7 @@ public class httpc {
     }
 
     /**
-     * Parses a URL into `host` (www.google.ca), `page` (/get) and `query` (?key=value) 
+     * Parses a URL into `host` (www.google.ca), `page` (/get) and `query` (?key=value)
      * @param fullURL A URL to be parsed.
      */
     private void parseURL(String fullURL) throws Exception {
@@ -287,7 +287,7 @@ public class httpc {
         String newQuery = URL.substring(indexOfQuery);
         if (!newQuery.equals(""))
             this.query = newQuery;
-        
+
         String newHost;
 
         if (indexOfPort != -1) {
@@ -321,7 +321,7 @@ public class httpc {
     }
 
     /**
-     * 
+     *
      */
     public static void main (String[] args) {
         httpc httpc = new httpc();

@@ -7,7 +7,7 @@ class SocketClient extends Thread {
         private final static String CONTENT_LENGTH = "Content-Length: ", HTTP_VERSION = "HTTP/",
             GET = "GET", POST = "POST";
 
-        private Socket client;
+        private TCPClientSocket client;
         private BufferedReader in;
         private PrintWriter out;
         private ReentrantLock mutex;
@@ -19,7 +19,7 @@ class SocketClient extends Thread {
         private String root;
         private int id;
 
-        public SocketClient(Socket client, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
+        public SocketClient(TCPClientSocket client, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
             this.client = client;
             this.mutex = mutex;
             this.in = new BufferedReader(new InputStreamReader(client.getInputStream()));

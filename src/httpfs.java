@@ -1,5 +1,4 @@
-import java.net.*;
-import java.io.*;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -29,7 +28,7 @@ public class httpfs {
             int id = 1;
 
             while(true) {
-                Socket client = server.accept();
+                TCPClientSocket client = server.accept();
 
                 SocketClient clientThread = new SocketClient(client, this.mutex, this.verbose, this.root, id);
                 clientThread.start();
