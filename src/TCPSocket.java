@@ -6,8 +6,12 @@ public class TCPSocket {
 
     }
 
+    /**
+    * Performs the 3-way TCP handshake between server and client
+    */
     public TCPClientSocket accept() {
-
+        
+        
         return null;
     }
 }
