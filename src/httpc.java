@@ -147,7 +147,7 @@ public class httpc {
      * @throws Exception           If type is neither "get" nor "post".
      */
     public void sendRequest(String type) throws UnknownHostException, IOException, Exception{
-        socket = new Socket(this.host, this.port);
+        socket = new TCPClientSocket(this.host, this.port);
         in = socket.getInputStream();
         out = socket.getOutputStream();
 

@@ -3,9 +3,11 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 
-class SocketClient extends Thread {
-        private final static String CONTENT_LENGTH = "Content-Length: ", HTTP_VERSION = "HTTP/",
-            GET = "GET", POST = "POST";
+class ClientThread extends Thread {
+        private final static String CONTENT_LENGTH = "Content-Length: ",
+                                    HTTP_VERSION = "HTTP/",
+                                    GET = "GET",
+                                    POST = "POST";
 
         private TCPClientSocket client;
         private BufferedReader in;
@@ -19,7 +21,7 @@ class SocketClient extends Thread {
         private String root;
         private int id;
 
-        public SocketClient(TCPClientSocket client, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
+        public ClientThread(TCPClientSocket client, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
             this.client = client;
             this.mutex = mutex;
             this.in = new BufferedReader(new InputStreamReader(client.getInputStream()));

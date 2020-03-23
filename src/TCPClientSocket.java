@@ -3,7 +3,7 @@ import java.io.OutputStream;
 
 public class TCPClientSocket {
 
-    public TCPClientSocket() {
+    public TCPClientSocket(String host, int port) {
 
     }
 

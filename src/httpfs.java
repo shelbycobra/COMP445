@@ -30,7 +30,7 @@ public class httpfs {
             while(true) {
                 TCPClientSocket client = server.accept();
 
-                SocketClient clientThread = new SocketClient(client, this.mutex, this.verbose, this.root, id);
+                ClientThread clientThread = new ClientThread(client, this.mutex, this.verbose, this.root, id);
                 clientThread.start();
                 id++;
             }
