@@ -3,6 +3,7 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.Scanner;
 import java.lang.Exception;
+import java.net.InetSocketAddress;
 
 
 public class httpc {
@@ -20,6 +21,9 @@ public class httpc {
     private String body = ""; // POST only
     private String outputFilePath = "";
     private String response = "";
+
+    private String routerAddr;
+    private int routerPort;
 
     /**
      * Prints help instructions to the console.
@@ -128,6 +132,11 @@ public class httpc {
             } else if (arg.equals("-o")) {
                 index++;
                 this.outputFilePath = args[index];
+            } else if (arg.equals("--router")) {
+                index++;
+                int indexOfColon = args[index].indexOf(':');
+                this.routerAddr = args[index].substring(0, indexOfColon);
+                this.routerPort = Integer.parseInt(args[index].substring(indexOfColon+1));
             } else {
                 parseURL(args[index]);
             }
@@ -147,11 +156,14 @@ public class httpc {
      * @throws Exception           If type is neither "get" nor "post".
      */
     public void sendRequest(String type) throws UnknownHostException, IOException, Exception{
-        socket = new TCPClientSocket(this.host, this.port);
+        socket = new TCPClientSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort));
+        
         in = socket.getInputStream();
         out = socket.getOutputStream();
 
         String request = buildRequest(type);
+
+        System.out.println(request);
 
         out.write(request.getBytes());
         out.flush();

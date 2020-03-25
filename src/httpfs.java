@@ -29,15 +29,17 @@ public class httpfs {
             int id = 1;
 
             while(true) {
+                // Accept incoming client requests
                 TCPClientSocket client = server.accept();
 
+                // Handle client request
                 ClientThread clientThread = new ClientThread(client, this.mutex, this.verbose, this.root, id);
                 clientThread.start();
                 id++;
             }
 
         } catch(Exception e) {
-            System.out.println(e);
+            e.printStackTrace();
         }
     }
 
@@ -145,14 +147,14 @@ public class httpfs {
 
                 if (path.equals("/"))
                     sendList(this.root);
-                else if (path.contains(".."))
+                else if (path.contains("..")) //TODO: Fix this --> send error only if path goes above 'root'
                     sendErrorResponse(403);
                 else
                     sendFileContents(path);
             } else if (this.request.indexOf(POST) == 0) {
                 path = this.request.substring(POST.length()+1, indexOfHttpVersion).trim();
 
-                if (path.equals("/") || path.contains(".."))
+                if (path.equals("/") || path.contains("..")) //TODO: Fix this --> send error only if path goes above 'root'
                     sendErrorResponse(403);
                 else
                     createOrOverrideFile(path);
@@ -331,7 +333,6 @@ public class httpfs {
             System.out.println(this.logHeader + "REQUEST:\n\n-------------------------\n" + this.request);
 
             while (line != null) {
-
                 if (line.contains(CONTENT_LENGTH))
                     contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
 
