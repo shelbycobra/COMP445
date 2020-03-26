@@ -23,7 +23,6 @@ public class httpfs {
     public void listen() throws IOException{
 
         server = new TCPSocket(this.port);
-        System.out.println("\nServer is listening on port " + this.port + "\n");
 
         try {
             int id = 1;

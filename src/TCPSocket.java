@@ -1,140 +1,224 @@
 import java.util.HashMap;
 import java.util.Set;
 
-import javafx.scene.chart.PieChart.Data;
-
 import java.io.IOException;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.SocketAddress;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.DatagramChannel;
-import java.nio.channels.SelectableChannel;
+// import java.nio.channels.SelectionKey;
+// import java.nio.channels.Selector;
+// import java.nio.channels.DatagramChannel;
+// import java.nio.channels.SelectableChannel;
 
 public class TCPSocket {
 
     private int port;
-    private DatagramChannel serverChannel;
-    private SelectionKey selectionKey;
-    private SocketAddress router;
-    private Selector selector;
-    private HashMap<InetSocketAddress, DatagramChannel> clients;
+    private DatagramSocket socket;
+    private InetSocketAddress router;
+    private InetSocketAddress requestAddr;
+    private HashMap<InetSocketAddress, TCPClientSocket> clients;
+
+    private Listener listener;
+
+    public final static Object lock = new Object();
 
     public TCPSocket(int port) throws IOException {
         this.port = port;
 
-        // Initialize listening channel
-        this.serverChannel = DatagramChannel.open();
-        serverChannel.setOption(StandardSocketOptions.SO_REUSEADDR, true);
-        serverChannel.socket().bind(new InetSocketAddress(this.port));
-        serverChannel.configureBlocking(false);
-
-        // Register listening channel with the selector
-        this.selector = Selector.open();
-        this.selectionKey = this.serverChannel.register(this.selector, SelectionKey.OP_READ);
+        // Create listening socket
+        this.socket = new DatagramSocket(port);
+        System.out.println("\nServer is listening on port " + this.port + "\n");
 
         // Initialize map of clients
         this.clients = new HashMap<>();
+
+        // Start listening for packets
+        this.listener = new Listener();
+        this.listener.start();
     }
 
     public TCPClientSocket accept() throws IOException {
+        try {
+            System.out.println("Accepting new connection\n");
 
-        System.out.println("Accepting new connection");
+            // -------------------------
+            // Step 1. Wait for SYN
+            // -------------------------
 
-        while(true) {
-            Packet packet = listenForPacket();
+            synchronized(lock) {
+                lock.wait();
+            }
 
-            if (packet.getType() == Packet.SYN) {
-                // Start 3-way handshake with client
-                TCPClientSocket clientSocket = connectToClient(packet);
+            // Perform 3-way handshake with incoming client
+            System.out.println("[3-WAY] Received SYN from " + requestAddr + ". Creating client socket ...");
 
-                // Return new client connection
-                return clientSocket;
-            } else {
-                processPacket(packet);
+            TCPClientSocket clientSocket = new TCPClientSocket(requestAddr, router, port);
+
+            // -------------------------
+            // Step 2. Send SYN-ACK
+            // -------------------------
+
+            // Create SYNACK packet
+            System.out.println("[3-WAY] Client socket created. Sending SYNACK ...");
+
+            Packet SYNACKPacket = new Packet(Packet.SYNACK, clientSocket.getSequenceNumber(), requestAddr.getAddress(), requestAddr.getPort(), new byte[0]);
+
+            // Send packet back to client
+            clientSocket.write(SYNACKPacket);
+
+            // -------------------------
+            // Step 3. Wait for ACK
+            // -------------------------
+
+            synchronized(lock) {
+                lock.wait();
+            }
+
+            System.out.println("[3-WAY] Received ACK from client. Client is now connected.");
+
+            // Add to map
+            addClient(requestAddr, clientSocket);
+
+            return clientSocket;
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return null;
+    }
+
+    // private class Accepter extends Thread {
+    //     @Override
+    //     public void run() {
+    //         // -------------------------
+    //         // Step 1. Wait for SYN
+    //         // -------------------------
+    //         try {
+    //             System.out.println("Accepting new connection\n");
+    //             synchronized(lock) {
+    //             lock.wait();
+    //             }
+
+    //             // Perform 3-way handshake with incoming client
+    //             System.out.println("[3-WAY] Received SYN from " + requestAddr + ". Creating client socket ...");
+
+    //             TCPClientSocket clientSocket = new TCPClientSocket(requestAddr, router, port);
+
+    //             // -------------------------
+    //             // Step 2. Send SYN-ACK
+    //             // -------------------------
+
+    //             // Create SYNACK packet
+    //             System.out.println("[3-WAY] Client socket created. Sending SYNACK ...");
+
+    //             Packet SYNACKPacket = new Packet(Packet.SYNACK, clientSocket.getSequenceNumber(), requestAddr.getAddress(), requestAddr.getPort(), new byte[0]);
+
+    //             // Send packet back to client
+    //             clientSocket.write(SYNACKPacket);
+
+    //             // -------------------------
+    //             // Step 3. Wait for ACK
+    //             // -------------------------
+
+    //             synchronized(lock) {
+    //                 lock.wait(10);
+    //                 }
+
+
+    //             System.out.println("[3-WAY] Received ACK from client. Client is now connected.");
+
+    //             // Add to map
+    //             addClient(requestAddr, clientSocket);
+
+    //         } catch (InterruptedException e) {
+    //             e.printStackTrace();
+    //         } catch (IOException e) {
+    //             e.printStackTrace();
+    //         }
+    //     }
+    // }
+
+    private synchronized void setRequestAddress(InetSocketAddress addr) {
+        this.requestAddr = addr;
+    }
+
+    private synchronized void setRouter(InetSocketAddress router) {
+        this.router = router;
+    }
+
+    private synchronized void addClient(InetSocketAddress addr, TCPClientSocket client) {
+        this.clients.put(addr, client);
+        setRequestAddress(null);
+    }
+
+    private class Listener extends Thread {
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Packet packet = listenForPacket();
+                    InetSocketAddress clientAddr = new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort());
+
+                    switch(packet.getType()) {
+                        case Packet.SYN:
+                            synchronized(lock) {
+                                setRequestAddress(clientAddr);
+                                lock.notify();
+                            }
+                            break;
+                        case Packet.ACK:
+                            synchronized(lock) {
+                                if (requestAddr != null && requestAddr.equals(clientAddr)) {
+                                    lock.notify();
+                                    break;
+                                }
+                            }
+                        case Packet.DATA:
+                        case Packet.NAK:
+                            forward(packet);
+                            break;
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         }
-    }
 
-    private Packet listenForPacket() throws IOException {
-        // Wait for client to send packet
-        this.selector.select();
+        private Packet listenForPacket() throws IOException {
 
-        // Clear keys
-        selector.selectedKeys().clear();
+            System.out.println("Listening for packets");
+            // All packets are 1024 bytes in size
+            byte[] buf = new byte[Packet.PACKET_SIZE];
+            DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
-        // All packets are 1024 bytes in size
-        ByteBuffer buf = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
-        buf.clear();
+            // Wait for client to send packet
+            socket.receive(packet);
 
-        // Get return address to router
-        this.router = this.serverChannel.receive(buf);
+            // Get return address to router
+            setRouter(new InetSocketAddress(packet.getAddress(), packet.getPort()));
 
-        // Flip buffer to read from it
-        buf.flip();
+            // Create Packet from buffer
+            Packet p = Packet.fromBuffer(buf);
 
-        // Create Packet from buffer
-        return Packet.fromBuffer(buf);
-    }
-
-     // Performs the server-side 3-way TCP handshake with client
-    private TCPClientSocket connectToClient(Packet SYNPacket) throws IOException {
-
-        System.out.println("Receiving new connection");
-
-        // -------------------------
-        // Step 1. Process SYN
-        // -------------------------
-
-        // Perform 3-way handshake with incoming client
-        InetSocketAddress clientAddr = SYNPacket.getFullAddress();
-        DatagramChannel clientChannel = DatagramChannel.open();
-
-        // Add to map
-        // TODO verify not already exists
-        this.clients.put(clientAddr, clientChannel);
-
-        System.out.println("[3-WAY] Received SYN from " + clientAddr + ". Creating client socket ...");
-
-        // Create client socket
-        TCPClientSocket clientSocket = new TCPClientSocket(clientAddr, this.router, clientChannel, this.port);
-
-        System.out.println("[3-WAY] Client socket created. Sending SYNACK ...");
-
-        // -------------------------
-        // Step 2. Send SYN-ACK
-        // -------------------------
-
-        // Create SYNACK packet
-        Packet SYNACKPacket = new Packet(Packet.SYNACK, clientSocket.getSequenceNumber(), clientAddr.getAddress(), clientAddr.getPort(), new byte[0]);
-
-        clientSocket.write(SYNACKPacket);
-
-        // -------------------------
-        // Step 3. Listen for ACK
-        // -------------------------
-
-        Packet ACKPacket = listenForPacket();
-
-        System.out.println("[3-WAY] Received ACK from client. Client is now connected.");
-
-        if (ACKPacket.getType() != Packet.ACK) {
-            System.out.println("ERROR: Expected type " + Packet.ACK + ". Got " + ACKPacket.getType() + " instead. ");
-            // SEND FAILURE
-            return null;
+            System.out.println(p.toString());
+            return p;
         }
 
-        return clientSocket;
-    }
+        private void forward(Packet packet) throws IOException {
+            InetSocketAddress clientAddr = new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort());
 
-    private void processPacket(Packet packet) {
-
+            TCPClientSocket clientSocket = clients.get(clientAddr);
+            clientSocket.write(packet);
+        }
     }
 }
