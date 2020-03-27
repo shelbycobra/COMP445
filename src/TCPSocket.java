@@ -117,54 +117,7 @@ public class TCPSocket {
         log("TCPSocket.close()", "Closing...");
         try {
 
-            // Send FIN to server
-            log("TCPSocket.close()", "Sending FIN to " + this.peerAddr.getAddress() + ":" + this.peerAddr.getPort());
-            Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
-            this.socket.send(FINPacket.toDatagramPacket(router));
-            this.sequenceNumber++;
-
-            // Wait for ACK
-            listener.pause();
-
-            log("TCPSocket.close()", "Waiting for ACK ...");
-
-            while(true) {
-                byte[] buf = new byte[1024];
-                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
-
-                // Listen for ACK
-                this.socket.receive(padgPacketcket);
-                Packet packet = Packet.fromBuffer(buf);
-
-                if (packet.getType() == Packet.ACK && packet.getSequenceNumber() == FINPacket.getSequenceNumber()) {
-                    log("TCPSocket.close()", "Received ACK.");
-                    break;
-                }
-                else
-                    this.receiver.put(packet);
-            }
-
-            log("TCPSocket.close()", "Waiting for FIN ...");
-
-            while(true) {
-                byte[] buf = new byte[1024];
-                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
-
-                // Listen for FIN
-                this.socket.receive(padgPacketcket);
-                Packet packet = Packet.fromBuffer(buf);
-
-                if (packet.getType() == Packet.FIN){
-                    log("TCPSocket.close()", "Received FIN.");
-                    log("TCPSocket.close()", "Sending ACK ...");
-                    this.receiver.sendACK(packet);
-                    break;
-                }
-                else
-                    this.receiver.put(packet);
-            }
-
-            listener.unpause();
+            this.listener.close();
 
             log("TCPSocket.close()", "Shutting down socket ...");
 
@@ -512,6 +465,63 @@ public class TCPSocket {
             }
 
             return null;
+        }
+
+        private void processFIN(Packet packet) {
+
+        }
+
+        public void close() {
+
+            pause();
+
+            // Send FIN to server
+            log("TCPSocket.Listener.close()", "Sending FIN to " + this.peerAddr.getAddress() + ":" + this.peerAddr.getPort());
+            Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
+            this.socket.send(FINPacket.toDatagramPacket(router));
+            this.sequenceNumber++;
+
+            // Wait for ACK
+            listener.pause();
+
+            log("TCPSocket.Listener.close()", "Waiting for ACK ...");
+
+            while(true) {
+                byte[] buf = new byte[1024];
+                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+                // Listen for ACK
+                this.socket.receive(padgPacketcket);
+                Packet packet = Packet.fromBuffer(buf);
+
+                if (packet.getType() == Packet.ACK && packet.getSequenceNumber() == FINPacket.getSequenceNumber()) {
+                    log("TCPSocket.Listener.close()", "Received ACK.");
+                    break;
+                }
+                else
+                    this.receiver.put(packet);
+            }
+
+            log("TCPSocket.Listener.close()", "Waiting for FIN ...");
+
+            while(true) {
+                byte[] buf = new byte[1024];
+                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+                // Listen for FIN
+                this.socket.receive(padgPacketcket);
+                Packet packet = Packet.fromBuffer(buf);
+
+                if (packet.getType() == Packet.FIN){
+                    log("TCPSocket.Listener.close()", "Received FIN.");
+                    log("TCPSocket.Listener.close()", "Sending ACK ...");
+                    this.receiver.sendACK(packet);
+                    break;
+                }
+                else
+                    this.receiver.put(packet);
+             }
+
         }
     }
 }
