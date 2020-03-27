@@ -30,6 +30,7 @@ public class TCPSocket {
     private int sequenceNumber;
     private int serverPort;
     private InetSocketAddress destAddr;
+    private InetSocketAddress peerAddr;
     private InetSocketAddress router;
     private boolean verbose;
 
@@ -117,9 +118,55 @@ public class TCPSocket {
         try {
 
             // Send FIN to server
+            log("TCPSocket.close()", "Sending FIN to " + this.peerAddr.getAddress() + ":" + this.peerAddr.getPort());
+            Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
+            this.socket.send(FINPacket.toDatagramPacket(router));
+            this.sequenceNumber++;
+
             // Wait for ACK
-            // Wait for FIN
-            // Send ACK
+            listener.pause();
+
+            log("TCPSocket.close()", "Waiting for ACK ...");
+
+            while(true) {
+                byte[] buf = new byte[1024];
+                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+                // Listen for ACK
+                this.socket.receive(padgPacketcket);
+                Packet packet = Packet.fromBuffer(buf);
+
+                if (packet.getType() == Packet.ACK && packet.getSequenceNumber() == FINPacket.getSequenceNumber()) {
+                    log("TCPSocket.close()", "Received ACK.");
+                    break;
+                }
+                else
+                    this.receiver.put(packet);
+            }
+
+            log("TCPSocket.close()", "Waiting for FIN ...");
+
+            while(true) {
+                byte[] buf = new byte[1024];
+                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+                // Listen for FIN
+                this.socket.receive(padgPacketcket);
+                Packet packet = Packet.fromBuffer(buf);
+
+                if (packet.getType() == Packet.FIN){
+                    log("TCPSocket.close()", "Received FIN.");
+                    log("TCPSocket.close()", "Sending ACK ...");
+                    this.receiver.sendACK(packet);
+                    break;
+                }
+                else
+                    this.receiver.put(packet);
+            }
+
+            listener.unpause();
+
+            log("TCPSocket.close()", "Shutting down socket ...");
 
             this.running.set(false);
             this.listener.join();
@@ -132,10 +179,10 @@ public class TCPSocket {
 
     // SERVER-SIDE accessible methods
 
-    protected void write(Packet packet) throws IOException {
-        this.sender.put(packet);
-        this.sequenceNumber++;
-    }
+    // protected void write(Packet packet) throws IOException {
+    //     this.sender.put(packet);
+    //     this.sequenceNumber++;
+    // }
 
     protected int getSequenceNumber() {
         return this.sequenceNumber;
@@ -163,6 +210,10 @@ public class TCPSocket {
             LocalDateTime now = LocalDateTime.now();
             System.out.println("[" + dtf.format(now) + " " + method + "] " + str);
         }
+    }
+
+    private synchronized void setPeerAddress(InetSocketAddress addr) {
+        this.peerAddr = addr;
     }
 
     /**
@@ -422,6 +473,7 @@ public class TCPSocket {
                     switch(packet.getType()) {
                         case Packet.SYNACK:
                             synchronized(lock) {
+                                setPeerAddress(new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort()));
                                 lock.notify();
                             }
                         case Packet.ACK:
