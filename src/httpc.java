@@ -156,19 +156,15 @@ public class httpc {
      * @throws Exception           If type is neither "get" nor "post".
      */
     public void sendRequest(String type) throws UnknownHostException, IOException, Exception{
-        socket = new TCPSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort));
+        socket = new TCPSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort), this.verbose);
 
         String request = buildRequest(type);
         System.out.println(request);
         socket.write(request.getBytes());
 
         String packet = socket.read();
-
-        while(packet.equals("")) {
-            packet = socket.read();
-        }
         this.response = packet + "\n\n";
-        System.out.println(response);
+
         socket.close();
     }
 

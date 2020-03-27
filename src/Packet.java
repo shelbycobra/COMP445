@@ -111,7 +111,7 @@ public class Packet {
 
     @Override
     public String toString() {
-        return "#" + sequenceNumber + " " + this.types[this.type] + " --> " + peerAddress + ":" + peerPort
+        return "#" + sequenceNumber + " " + this.types[this.type] + " " + peerAddress + ":" + peerPort
             + "\n" + new String(payload);
     }
 

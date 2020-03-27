@@ -3,6 +3,9 @@ import java.util.Set;
 
 import java.io.IOException;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -12,29 +15,25 @@ import java.net.StandardSocketOptions;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-// import java.nio.channels.SelectionKey;
-// import java.nio.channels.Selector;
-// import java.nio.channels.DatagramChannel;
-// import java.nio.channels.SelectableChannel;
 
 public class TCPServerSocket {
 
+    private final static Object lock = new Object();
+
     private int port;
+    private boolean verbose;
     private DatagramSocket socket;
     private InetSocketAddress router;
     private InetSocketAddress requestAddr;
     private HashMap<InetSocketAddress, TCPSocket> clients;
-
     private Listener listener;
-
-    public final static Object lock = new Object();
 
     public TCPServerSocket(int port) throws IOException {
         this.port = port;
 
         // Create listening socket
         this.socket = new DatagramSocket(port);
-        System.out.println("\nServer is listening on port " + this.port + "\n");
+        log("TCPServerSocket.TCPServerSocket()", "\nServer is listening on port " + this.port);
 
         // Initialize map of clients
         this.clients = new HashMap<>();
@@ -46,18 +45,18 @@ public class TCPServerSocket {
 
     public TCPSocket accept() throws IOException {
         try {
-            System.out.println("[Accepter] Accepting new connection\n");
+            log("TCPServerSocket.accept()", "Accepting new connection");
 
             // Step 1. Wait for SYN
             synchronized(lock) {
                 lock.wait();
             }
 
-            System.out.println("[3-WAY] Received SYN from " + requestAddr + ". Creating client socket ...");
-            TCPSocket clientSocket = new TCPSocket(this.requestAddr, this.router, this.port);
+            log("TCPServerSocket.accept()", "Received SYN from " + requestAddr + ". Creating client socket ...");
+            TCPSocket clientSocket = new TCPSocket(this.requestAddr, this.router, this.verbose, this.port);
 
             // Step 2. Send SYN-ACK
-            System.out.println("[3-WAY] Client socket created. Sending SYNACK ...");
+            log("TCPServerSocket.accept()", "Client socket created. Sending SYNACK ...");
             Packet SYNACKPacket = new Packet(Packet.SYNACK, clientSocket.getSequenceNumber(), requestAddr.getAddress(), requestAddr.getPort(), new byte[0]);
 
             // Send packet back to client
@@ -69,7 +68,7 @@ public class TCPServerSocket {
             }
 
             addClient(requestAddr, clientSocket);
-            System.out.println("[3-WAY] Received ACK from client. Client is now connected.");
+            log("TCPServerSocket.accept()", "Received ACK from client. Client is now connected.");
 
             return clientSocket;
 
@@ -80,6 +79,18 @@ public class TCPServerSocket {
         }
 
         return null;
+    }
+
+    public void setVerbose(boolean verbose) {
+        this.verbose = verbose;
+    }
+
+    private void log(String method, String str) {
+        if (this.verbose) {
+            DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd:MM:yyy HH:mm:ss");
+            LocalDateTime now = LocalDateTime.now();
+            System.out.println("[" + dtf.format(now) + " " + method + "] " + str);
+        }
     }
 
     private synchronized void setRequestAddress(InetSocketAddress addr) {

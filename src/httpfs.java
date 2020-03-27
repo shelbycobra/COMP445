@@ -24,6 +24,8 @@ public class httpfs {
 
         server = new TCPServerSocket(this.port);
 
+        server.setVerbose(this.verbose);
+
         try {
             int id = 1;
 
