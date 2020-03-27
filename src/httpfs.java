@@ -317,49 +317,49 @@ public class httpfs {
         private void parseFullRequest() throws IOException{
             StringBuilder headers = new StringBuilder();
             String request = this.socket.read();
-            System.out.println(this.logHeader + request);
             int contentLength = 0;
 
-            String[] lines = request.trim().split("\n");
+            String[] requestLines = request.trim().split("\n");
 
-            // if (!lines[0].contains(GET) && !lines[0].contains(POST))
-            //     sendErrorResponse(400); // Bad request
+            if (!requestLines[0].contains(GET) && !requestLines[0].contains(POST))
+                sendErrorResponse(400); // Bad request
 
-            // // First line is always the header
-            // this.request = line;
+            // First line is always the header
+            this.request = requestLines[0];
 
-            // System.out.println(this.logHeader + "REQUEST:\n\n-------------------------\n" + this.request);
+            System.out.println(this.logHeader + "REQUEST:\n-------------------------\n" + this.request);
 
-            // while (line != null) {
-            //     if (line.contains(CONTENT_LENGTH))
-            //         contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
+            int pos = 1;
+            while (pos < requestLines.length) {
+                String line = requestLines[pos];
 
-            //     // line = in.readLine();
-            //     headers.append(line).append("\r\n");
+                if (line.contains(CONTENT_LENGTH))
+                    contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
 
-            //     // Break at end of headers.
-            //     if (line.equals("")) break;
-            // }
+                headers.append(line).append("\r\n");
 
-            // this.headers = headers.toString();
-            // System.out.print(this.headers);
+                // Break at end of headers.
+                if (line.equals("")) break;
+                pos++;
+            }
 
-            // if (contentLength > 0) {
-            //     int c;
-            //     int count = 0;
-            //     StringBuilder body = new StringBuilder();
+            this.headers = headers.toString();
 
-                // while ((c = in.read()) != -1) {
-                //     body.append((char)c);
-                //     count++;
+            // Create the body of the request
+            StringBuilder body = new StringBuilder();
 
-                //     if (count >= contentLength) break;
-                // }
+            while (pos < requestLines.length) {
+                body.append(requestLines[pos]);
+            }
 
-                // this.body = body.toString();
+            while (body.length() < contentLength) {
+                String data = socket.read();
+                body.append(data);
+            }
 
-                // System.out.println(this.body + "\n-------------------------\n");
-            // }
+            this.body = body.toString().substring(0, contentLength);
+
+            System.out.println(this.body + "\n-------------------------\n");
         }
     }
 

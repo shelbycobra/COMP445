@@ -3,15 +3,10 @@ import java.util.Iterator;
 import java.util.ArrayDeque;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.StandardSocketOptions;
@@ -25,39 +20,33 @@ import java.nio.charset.StandardCharsets;
 public class TCPSocket {
 
     private final int WINDOW_SIZE = 10;
+    private final static Object lock = new Object();
+    private AtomicBoolean running = new AtomicBoolean(true);
 
-    public final static Object lock = new Object();
-
-    protected InetSocketAddress router;
     private DatagramSocket socket;
     private int sequenceNumber;
-    private InetSocketAddress destAddr;
     private int serverPort;
+    private InetSocketAddress destAddr;
+    private InetSocketAddress router;
 
     private Listener listener;
     private Sender sender;
     private Receiver receiver;
 
-    protected PriorityBlockingQueue<Packet> sendBuffer;
-    protected ArrayDeque<Packet> ackWaitQueue;
-    protected PriorityBlockingQueue<Packet> receiveBuffer;
-    protected PriorityBlockingQueue<Packet> readQueue;
-
-    private AtomicBoolean running = new AtomicBoolean(true);
+    private ArrayDeque<Packet> ackWaitQueue;
+    private PriorityBlockingQueue<Packet> readQueue;
 
     // TCPSocket constructor used by the client to create a client-side connection
     // to a specific server.
     public TCPSocket(InetSocketAddress destAddr, InetSocketAddress router) throws IOException {
         this.destAddr = destAddr;
         this.router = router;
+        this.sequenceNumber = 1;
 
         // Bind to a port and connect to destination address
         setupSocket();
 
-        // Initialize Sequence Number
-        this.sequenceNumber = 1;
-
-        // Allocate Resources
+        // Create ackWaitQueue and readQueue and start Sender, Receiver and Listener threads
         allocateResources();
 
         // Initiate 3-way handshake with server
@@ -70,80 +59,11 @@ public class TCPSocket {
         this.destAddr = destAddr;
         this.router = router;
         this.serverPort = serverPort;
+        this.sequenceNumber = 1;
         this.socket = new DatagramSocket();
 
-        // Initialize Sequence Number
-        this.sequenceNumber = 1;
-
-        //Allocate resources
+        // Create ackWaitQueue and readQueue and start Sender, Receiver and Listener threads
         allocateResources();
-    }
-
-    protected int getSequenceNumber() {
-        return this.sequenceNumber;
-    }
-
-    public synchronized void setRouter(InetSocketAddress router) {
-        this.router = router;
-    }
-
-    public String read() throws IOException {
-        StringBuilder data = new StringBuilder();
-        while (!readQueue.isEmpty()) {
-            Packet packet = readQueue.poll();
-            // System.out.println("[Read] Packet" + packet);
-            if (packet.getType() == Packet.DATA) {
-                for (byte b : packet.getPayload()) {
-                    data.append((char) b);
-                }
-            }
-        }
-        return data.toString();
-    }
-
-    protected void write(Packet packet) throws IOException {
-        this.sender.put(packet);
-        this.sequenceNumber++;
-    }
-
-    public void write(String data) throws IOException {
-        write(data.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public void write(byte[] data) throws IOException {
-        ArrayList<Packet> packets = createPackets(data);
-
-        for (Packet p : packets) {
-            this.sender.put(p);
-        }
-    }
-
-    public void close() {
-        System.out.println("Closing...");
-        try {
-            Thread.sleep(300);
-            this.running.set(false);
-            this.listener.join();
-
-            this.sender.join();
-            this.receiver.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
-    protected void receive(Packet packet) throws IOException {
-        switch(packet.getType()) {
-            case Packet.ACK:
-                this.sender.processACK(packet);
-                break;
-            case Packet.NAK:
-                this.sender.processNAK(packet);
-                break;
-            case Packet.DATA:
-                this.receiver.put(packet);
-                break;
-        }
     }
 
     /**
@@ -183,29 +103,34 @@ public class TCPSocket {
             System.out.println("[3-WAY] Sending SYN ...");
             Packet SYNPacket = new Packet(Packet.SYN, this.sequenceNumber, this.destAddr.getAddress(), this.destAddr.getPort(), new byte[0]);
 
-            write(SYNPacket);
+            // Send SYN to server and pass packet to Sender thread
+            this.sender.put(SYNPacket);
 
-            // Step 2. Wait for SYNACK
+            // Increment sequence number
+            this.sequenceNumber++;
+
+            // Step 2. Wait for Listener thread to receive SYNACK
             synchronized(lock) {
                 lock.wait();
             }
+
             System.out.println("[3-WAY] Received SYNACK from server ...");
 
             // Step 3. Send ACK
             Packet ACKPacket = new Packet(Packet.ACK, 1, this.destAddr.getAddress(), this.destAddr.getPort(), new byte[0]);
+
+            // Send ACK directly to server, bypassing the Sender thread.
             this.socket.send(ACKPacket.toDatagramPacket(router));
 
             System.out.println("[3-WAY] Sending ACK ...");
-            System.out.println("Successfully connected to server\n");
+            System.out.println("Successfully connected to server");
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
 
     private void allocateResources() {
-        this.sendBuffer = new PriorityBlockingQueue<>(WINDOW_SIZE, new Packet.PacketComparator());
         this.ackWaitQueue = new ArrayDeque<>();
-        this.receiveBuffer = new PriorityBlockingQueue<>(WINDOW_SIZE, new Packet.PacketComparator());
         this.readQueue = new PriorityBlockingQueue<>(1000, new Packet.PacketComparator());
 
         this.listener = new Listener();
@@ -262,17 +187,100 @@ public class TCPSocket {
         return packets;
     }
 
+    public synchronized void setRouter(InetSocketAddress router) {
+        this.router = router;
+    }
+
+    // Blocking
+    public String read() throws IOException {
+        StringBuilder data = new StringBuilder();
+
+        // Block until readQueue contains data
+        while (readQueue.isEmpty());
+
+        // Read data from queue
+        while (!readQueue.isEmpty()) {
+            Packet packet = readQueue.poll();
+            // System.out.println("[Read] Packet" + packet);
+            if (packet.getType() == Packet.DATA) {
+                for (byte b : packet.getPayload()) {
+                    data.append((char) b);
+                }
+            }
+        }
+        return data.toString();
+    }
+
+    public void write(String data) throws IOException {
+        write(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public void write(byte[] data) throws IOException {
+        ArrayList<Packet> packets = createPackets(data);
+
+        for (Packet p : packets) {
+            this.sender.put(p);
+        }
+    }
+
+    public void close() {
+        System.out.println("Closing...");
+        try {
+
+            // Send FIN to server
+            // Wait for ACK
+            // Wait for FIN
+            // Send ACK
+
+            this.running.set(false);
+            this.listener.join();
+            this.sender.join();
+            this.receiver.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // SERVER-SIDE accessible methods
+
+    protected void write(Packet packet) throws IOException {
+        this.sender.put(packet);
+        this.sequenceNumber++;
+    }
+
+    protected int getSequenceNumber() {
+        return this.sequenceNumber;
+    }
+
+    protected void receive(Packet packet) throws IOException {
+        switch(packet.getType()) {
+            case Packet.ACK:
+                this.sender.processACK(packet);
+                break;
+            case Packet.NAK:
+                this.sender.processNAK(packet);
+                break;
+            case Packet.DATA:
+                this.receiver.put(packet);
+                break;
+        }
+    }
+
+    // Threads
+
     /**
      *
      */
     private class Sender extends Thread {
 
+        private PriorityBlockingQueue<Packet> sendBuffer;
         private int nextSeqNum;
         private int base;
 
         public Sender() {
             this.base = 1;
             this.nextSeqNum = 1;
+            this.sendBuffer = new PriorityBlockingQueue<>(WINDOW_SIZE, new Packet.PacketComparator());
         }
 
         @Override
@@ -282,7 +290,7 @@ public class TCPSocket {
                     if (!sendBuffer.isEmpty() && nextSeqNum == sendBuffer.peek().getSequenceNumber()) {
                         Packet packet = sendBuffer.poll();
 
-                        // System.out.println("\n[SENDER]" + packet);
+                        System.out.println("\nSending packet: " + packet);
 
                         // Put packet into ack queue
                         ackWaitQueue.add(packet);
@@ -312,6 +320,7 @@ public class TCPSocket {
                 if (packet.getSequenceNumber() == it.next().getSequenceNumber()) {
                     it.remove();
 
+                    System.out.println("Successfully received ACK for packet " + packet.getSequenceNumber());
                     if (packet.getSequenceNumber() == base) {
                         base++;
                     }
@@ -331,41 +340,44 @@ public class TCPSocket {
      *
      */
     private class Receiver extends Thread {
+        private PriorityBlockingQueue<Packet> receiveBuffer;
         private int base;
 
         public Receiver() {
             this.base = 2;
+            this.receiveBuffer = new PriorityBlockingQueue<>(WINDOW_SIZE, new Packet.PacketComparator());
         }
 
         @Override
         public void run() {
             while(running.get()) {
-                if (!receiveBuffer.isEmpty()) {
-                    // if (receiveBuffer.peek().getSequenceNumber() == base) {
+                if (!receiveBuffer.isEmpty() && receiveBuffer.peek().getSequenceNumber() == base) {
                     Packet packet = receiveBuffer.poll();
-                    // System.out.println("\n[RECEIVER]" + packet);
+                    
                     readQueue.add(packet);
+                    base++;
                 }
             }
-
             System.out.println("Closing Receiver");
         }
 
         public void put(Packet packet) throws IOException {
-            // System.out.println("BASE + WIN = " + (base + WINDOW_SIZE));
             if (packet.getSequenceNumber() < (base + WINDOW_SIZE)) {
-                // System.out.println("[Receiver.put()] " + packet);
+                System.out.println("\nReceived packet: " + packet);
+                // Send ACK to all packets within the window and any packet previously received
                 sendACK(packet);
-                // Add packet to receive buffer
-                receiveBuffer.put(packet);
+
+                if (packet.getSequenceNumber() >= base) {
+                    // Add packet to receive buffer
+                    receiveBuffer.put(packet);
+                }
             }
         }
 
         private void sendACK(Packet packet) throws IOException {
-            // System.out.println("[Sending ACK] for " + packet);
+            System.out.println("Sending ACK for " + packet);
             Packet ack = new Packet(Packet.ACK, packet.getSequenceNumber(), destAddr.getAddress(), destAddr.getPort(), new byte[0]);
             socket.send(ack.toDatagramPacket(router));
-            base++;
         }
 
         private void sendNAK(Packet packet) throws IOException {
@@ -382,6 +394,8 @@ public class TCPSocket {
                 try {
                     Packet packet = listenForPacket();
 
+                    // Shut down signal was caught in listenForPacket()
+                    // and it returned null
                     if (packet == null)
                         break;
 
@@ -408,16 +422,17 @@ public class TCPSocket {
         }
 
         private Packet listenForPacket() throws IOException {
-            // All packets are 1024 bytes in size
             byte[] buf = new byte[Packet.PACKET_SIZE];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
+            // Set a receive timeout to prevent indefinite blocking
             socket.setSoTimeout(500);
 
-            // Wait for client to send packet
             while (running.get()) {
                 try {
+                    // Wait for client to send datagram packet
                     socket.receive(packet);
+
                     // Create Packet from buffer
                     return Packet.fromBuffer(buf);
                 } catch (SocketTimeoutException e) {
