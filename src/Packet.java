@@ -5,6 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Comparator;
 
 public class Packet {
 
@@ -18,13 +19,15 @@ public class Packet {
     public final static int ACK = 4;
     public final static int NAK = 5;
 
+    private String[] types = {"", "DATA", "SYN", "SYNACK", "ACK", "NAK"};
+
     private final int type;
-    private final long sequenceNumber;
+    private final int sequenceNumber;
     private final InetAddress peerAddress;
     private final int peerPort;
     private final byte[] payload;
 
-    public Packet(int type, long sequenceNumber, InetAddress peerAddress, int peerPort, byte[] payload) {
+    public Packet(int type, int sequenceNumber, InetAddress peerAddress, int peerPort, byte[] payload) {
         this.type = type;
         this.sequenceNumber = sequenceNumber;
         this.peerAddress = peerAddress;
@@ -36,7 +39,7 @@ public class Packet {
         return type;
     }
 
-    public long getSequenceNumber() {
+    public int getSequenceNumber() {
         return sequenceNumber;
     }
 
@@ -94,15 +97,13 @@ public class Packet {
 
     @Override
     public String toString() {
-        return "Type: " + this.type
-            + "\nSequence Number: #" + sequenceNumber
-            + "\nPeer: " + peerAddress + ":" + peerPort
-            + "\nPayload:\n" + new String(payload);
+        return "#" + sequenceNumber + " " + this.types[this.type] + " --> " + peerAddress + ":" + peerPort
+            + "\n" + new String(payload);
     }
 
     public static class Builder {
         private int type;
-        private long sequenceNumber;
+        private int sequenceNumber;
         private InetAddress peerAddress;
         private int portNumber;
         private byte[] payload;
@@ -112,7 +113,7 @@ public class Packet {
             return this;
         }
 
-        public Builder setSequenceNumber(long sequenceNumber) {
+        public Builder setSequenceNumber(int sequenceNumber) {
             this.sequenceNumber = sequenceNumber;
             return this;
         }
@@ -136,4 +137,16 @@ public class Packet {
             return new Packet(type, sequenceNumber, peerAddress, portNumber, payload);
         }
     }
+
+    public static class PacketComparator implements Comparator<Packet> {
+        @Override
+        public int compare(Packet p1, Packet p2) {
+            return p1.getSequenceNumber() - p2.getSequenceNumber();
+        }
+
+        public boolean equals(Packet p1, Packet p2) {
+            return p1.getSequenceNumber() == p2.getSequenceNumber();
+        }
+    }
 }
+

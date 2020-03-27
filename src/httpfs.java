@@ -5,7 +5,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class httpfs {
 
-    private TCPSocket server;
+    private TCPServerSocket server;
     private String root;
     private int port;
     private boolean verbose;
@@ -22,14 +22,14 @@ public class httpfs {
 
     public void listen() throws IOException{
 
-        server = new TCPSocket(this.port);
+        server = new TCPServerSocket(this.port);
 
         try {
             int id = 1;
 
             while(true) {
                 // Accept incoming client requests
-                TCPClientSocket client = server.accept();
+                TCPSocket client = server.accept();
 
                 // Handle client request
                 ClientThread clientThread = new ClientThread(client, this.mutex, this.verbose, this.root, id);
@@ -91,9 +91,7 @@ public class httpfs {
                                     GET = "GET",
                                     POST = "POST";
 
-        private TCPClientSocket client;
-        private BufferedReader in;
-        private PrintWriter out;
+        private TCPSocket socket;
         private ReentrantLock mutex;
         private boolean verbose;
         private String logHeader;
@@ -103,11 +101,9 @@ public class httpfs {
         private String root;
         private int id;
 
-        public ClientThread(TCPClientSocket client, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
-            this.client = client;
+        public ClientThread(TCPSocket socket, ReentrantLock mutex, boolean verbose, String root, int id) throws IOException{
+            this.socket = socket;
             this.mutex = mutex;
-            this.in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-            this.out = new PrintWriter(client.getOutputStream());
             this.verbose = verbose;
             this.root = root;
             this.id = id;
@@ -125,7 +121,7 @@ public class httpfs {
                 parseFullRequest();
                 parseRequestLine();
 
-                client.close();
+                this.socket.close();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -184,12 +180,12 @@ public class httpfs {
                 if (this.verbose)
                     System.out.println(list);
 
-                out.print("HTTP/1.0 200 OK\r\n"
+                String response = "HTTP/1.0 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
                     + "Content-length: " + list.length() + "\r\n"
                     + "\r\n"
-                    + list.toString());
-                out.flush();
+                    + list.toString();
+                this.socket.write(response);
             } catch (Exception e) {
                 sendErrorResponse(500);
                 e.printStackTrace();
@@ -228,12 +224,12 @@ public class httpfs {
                         System.out.println(this.logHeader + "Leaving Read CS");
                     mutex.unlock();
 
-                    out.print("HTTP/1.0 200 OK\r\n"
+                    String response = "HTTP/1.0 200 OK\r\n"
                         + "Content-type: text/plain\r\n"
                         + "Content-length: " + contents.length() + "\r\n"
                         + "\r\n"
-                        + contents.toString());
-                    out.flush();
+                        + contents.toString();
+                    this.socket.write(response);
                     fin.close();
 
                     if (this.verbose)
@@ -286,9 +282,7 @@ public class httpfs {
 
                 mutex.unlock();
 
-                out.print(response);
-                out.flush();
-
+                this.socket.write(response.toString());
             } catch (Exception e) {
                 sendErrorResponse(500);
                 e.printStackTrace();
@@ -299,68 +293,73 @@ public class httpfs {
             if (this.verbose)
                 System.out.println(this.logHeader + "Sending Error response " + code);
 
-            switch(code) {
-                case 400:
-                    this.out.print("HTTP/1.0 400 Bad Request\r\n" + this.headers);
-                    break;
-                case 403:
-                    this.out.print("HTTP/1.0 403 Forbidden\r\n" + this.headers);
-                    break;
-                case 404:
-                    this.out.print("HTTP/1.0 404 Not Found\r\n" + this.headers);
-                    break;
-                case 500:
-                default:
-                    this.out.print("HTTP/1.0 500 Internal Server Error\r\n" + this.headers);
-                    break;
+            try {
+                switch(code) {
+                    case 400:
+                        this.socket.write("HTTP/1.0 400 Bad Request\r\n" + this.headers);
+                        break;
+                    case 403:
+                        this.socket.write("HTTP/1.0 403 Forbidden\r\n" + this.headers);
+                        break;
+                    case 404:
+                        this.socket.write("HTTP/1.0 404 Not Found\r\n" + this.headers);
+                        break;
+                    case 500:
+                    default:
+                        this.socket.write("HTTP/1.0 500 Internal Server Error\r\n" + this.headers);
+                        break;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-
-            out.flush();
         }
 
         private void parseFullRequest() throws IOException{
             StringBuilder headers = new StringBuilder();
-            String line = this.in.readLine();
+            String request = this.socket.read();
+            System.out.println(this.logHeader + request);
             int contentLength = 0;
 
-            if (!line.contains(GET) && !line.contains(POST))
-                sendErrorResponse(400); // Bad request
+            String[] lines = request.trim().split("\n");
 
-            // First line is always the header
-            this.request = line;
+            // if (!lines[0].contains(GET) && !lines[0].contains(POST))
+            //     sendErrorResponse(400); // Bad request
 
-            System.out.println(this.logHeader + "REQUEST:\n\n-------------------------\n" + this.request);
+            // // First line is always the header
+            // this.request = line;
 
-            while (line != null) {
-                if (line.contains(CONTENT_LENGTH))
-                    contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
+            // System.out.println(this.logHeader + "REQUEST:\n\n-------------------------\n" + this.request);
 
-                line = in.readLine();
-                headers.append(line).append("\r\n");
+            // while (line != null) {
+            //     if (line.contains(CONTENT_LENGTH))
+            //         contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
 
-                // Break at end of headers.
-                if (line.equals("")) break;
-            }
+            //     // line = in.readLine();
+            //     headers.append(line).append("\r\n");
 
-            this.headers = headers.toString();
-            System.out.print(this.headers);
+            //     // Break at end of headers.
+            //     if (line.equals("")) break;
+            // }
 
-            if (contentLength > 0) {
-                int c;
-                int count = 0;
-                StringBuilder body = new StringBuilder();
+            // this.headers = headers.toString();
+            // System.out.print(this.headers);
 
-                while ((c = in.read()) != -1) {
-                    body.append((char)c);
-                    count++;
+            // if (contentLength > 0) {
+            //     int c;
+            //     int count = 0;
+            //     StringBuilder body = new StringBuilder();
 
-                    if (count >= contentLength) break;
-                }
+                // while ((c = in.read()) != -1) {
+                //     body.append((char)c);
+                //     count++;
 
-                this.body = body.toString();
+                //     if (count >= contentLength) break;
+                // }
 
-                System.out.println(this.body + "\n-------------------------\n");
-            }
+                // this.body = body.toString();
+
+                // System.out.println(this.body + "\n-------------------------\n");
+            // }
         }
     }
 

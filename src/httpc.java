@@ -7,7 +7,7 @@ import java.net.InetSocketAddress;
 
 
 public class httpc {
-    private TCPClientSocket socket;
+    private TCPSocket socket;
     private InputStream in;
     private OutputStream out;
     private boolean verbose = false;
@@ -156,29 +156,20 @@ public class httpc {
      * @throws Exception           If type is neither "get" nor "post".
      */
     public void sendRequest(String type) throws UnknownHostException, IOException, Exception{
-        socket = new TCPClientSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort));
-        
-        in = socket.getInputStream();
-        out = socket.getOutputStream();
+        socket = new TCPSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort));
 
         String request = buildRequest(type);
-
         System.out.println(request);
+        socket.write(request.getBytes());
 
-        out.write(request.getBytes());
-        out.flush();
+        String packet = socket.read();
 
-        StringBuilder response = new StringBuilder();
-        int data = in.read();
-
-        while(data != -1 ) {
-            response.append((char)data);
-            data = in.read();
+        while(packet.equals("")) {
+            packet = socket.read();
         }
-
+        this.response = packet + "\n\n";
+        System.out.println(response);
         socket.close();
-
-        this.response = response.append("\n\n").toString();
     }
 
     /**
@@ -276,7 +267,7 @@ public class httpc {
         // Find index of first / and ? to identify the page
         int indexOfQuery = URL.indexOf('?');
         int indexOfSlash = URL.indexOf('/');
-        int indexOfPort  = URL.indexOf(':'); 
+        int indexOfPort  = URL.indexOf(':');
 
         // If ? doesn't exist in URL, then no query exists in the URL and set indexOfQuery to length of URL
         if (indexOfQuery == -1)
@@ -289,7 +280,7 @@ public class httpc {
             // URL has no page, eg. "www.example.com" or "www.example.com?key=value"
             this.page = "/";
             URLEndPoint = indexOfQuery;
-        } else { 
+        } else {
             // URL has a page to navigate, eg. "www.example.com/path/to/path" or "www.example.com/path/to/path?key=value"
             this.page = URL.substring(indexOfSlash, indexOfQuery);
             URLEndPoint = indexOfSlash;
