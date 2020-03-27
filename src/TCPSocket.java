@@ -2,6 +2,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.ArrayDeque;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -12,6 +13,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.StandardSocketOptions;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -40,6 +42,8 @@ public class TCPSocket {
     protected ArrayDeque<Packet> ackWaitQueue;
     protected PriorityBlockingQueue<Packet> receiveBuffer;
     protected PriorityBlockingQueue<Packet> readQueue;
+
+    private AtomicBoolean running = new AtomicBoolean(true);
 
     // TCPSocket constructor used by the client to create a client-side connection
     // to a specific server.
@@ -94,7 +98,6 @@ public class TCPSocket {
                 }
             }
         }
-
         return data.toString();
     }
 
@@ -116,15 +119,14 @@ public class TCPSocket {
     }
 
     public void close() {
+        System.out.println("Closing...");
         try {
-            System.out.println("Closing...");
-            this.sender.interrupt();
-            this.receiver.interrupt();
-            this.listener.interrupt();
+            Thread.sleep(300);
+            this.running.set(false);
+            this.listener.join();
 
             this.sender.join();
             this.receiver.join();
-            this.listener.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -276,7 +278,7 @@ public class TCPSocket {
         @Override
         public void run() {
             try {
-                while(true) {
+                while(running.get()) {
                     if (!sendBuffer.isEmpty() && nextSeqNum == sendBuffer.peek().getSequenceNumber()) {
                         Packet packet = sendBuffer.poll();
 
@@ -293,6 +295,8 @@ public class TCPSocket {
             } catch (IOException e) {
                 e.printStackTrace();
             }
+
+            System.out.println("Closing Sender");
         }
 
         public void put(Packet packet) throws IOException {
@@ -335,7 +339,7 @@ public class TCPSocket {
 
         @Override
         public void run() {
-            while(true) {
+            while(running.get()) {
                 if (!receiveBuffer.isEmpty()) {
                     // if (receiveBuffer.peek().getSequenceNumber() == base) {
                     Packet packet = receiveBuffer.poll();
@@ -343,6 +347,8 @@ public class TCPSocket {
                     readQueue.add(packet);
                 }
             }
+
+            System.out.println("Closing Receiver");
         }
 
         public void put(Packet packet) throws IOException {
@@ -369,11 +375,15 @@ public class TCPSocket {
     }
 
     private class Listener extends Thread {
+
         @Override
         public void run() {
-            while(true) {
+            while(running.get()) {
                 try {
                     Packet packet = listenForPacket();
+
+                    if (packet == null)
+                        break;
 
                     // System.out.println("[LISTENER] " + packet);
                     switch(packet.getType()) {
@@ -392,9 +402,9 @@ public class TCPSocket {
                             break;
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
                 }
             }
+            System.out.println("Closing Listener");
         }
 
         private Packet listenForPacket() throws IOException {
@@ -402,11 +412,20 @@ public class TCPSocket {
             byte[] buf = new byte[Packet.PACKET_SIZE];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
-            // Wait for client to send packet
-            socket.receive(packet);
+            socket.setSoTimeout(500);
 
-            // Create Packet from buffer
-            return Packet.fromBuffer(buf);
+            // Wait for client to send packet
+            while (running.get()) {
+                try {
+                    socket.receive(packet);
+                    // Create Packet from buffer
+                    return Packet.fromBuffer(buf);
+                } catch (SocketTimeoutException e) {
+                    continue;
+                }
+            }
+
+            return null;
         }
     }
 }
