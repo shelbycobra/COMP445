@@ -24,13 +24,11 @@ public class TCPSocket {
 
     private final int WINDOW_SIZE = 10;
     private final static Object lock = new Object();
-    private AtomicBoolean running = new AtomicBoolean(true);
 
     private DatagramSocket socket;
     private int sequenceNumber;
     private int serverPort;
     private InetSocketAddress destAddr;
-    private InetSocketAddress peerAddr;
     private InetSocketAddress router;
     private boolean verbose;
 
@@ -115,13 +113,61 @@ public class TCPSocket {
 
     public void close() {
         log("TCPSocket.close()", "Closing...");
+
+        // Send FIN to server
+        log("TCPSocket.close()", "Sending FIN to " + this.peerAddr.getAddress() + ":" + this.peerAddr.getPort());
+        Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
+        this.sequenceNumber++;
+        
+        this.sender.put(FINPacket);
+
+        // Wait for ACK
+        listener.close();
+
+        log("TCPSocket.close()", "Waiting for ACK ...");
+
+        while(true) {
+            byte[] buf = new byte[1024];
+            DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+            // Listen for ACK
+            this.socket.receive(padgPacketcket);
+            Packet packet = Packet.fromBuffer(buf);
+
+            if (packet.getType() == Packet.ACK && packet.getSequenceNumber() == FINPacket.getSequenceNumber()) {
+                log("TCPSocket.close()", "Received ACK.");
+                break;
+            }
+            else
+                this.receiver.put(packet);
+        }
+
+        log("TCPSocket.close()", "Waiting for FIN ...");
+
+        while(true) {
+            byte[] buf = new byte[1024];
+            DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+            // Listen for FIN
+            this.socket.receive(dgPacket);
+            Packet packet = Packet.fromBuffer(buf);
+
+            if (packet.getType() == Packet.FIN){
+                log("TCPSocket.close()", "Received FIN.");
+                log("TCPSocket.close()", "Sending ACK ...");
+                this.receiver.sendACK(packet);
+                break;
+            }
+            else
+                this.receiver.put(packet);
+        }
+
+        log("TCPSocket.close()", "Shutting down socket ...");
+
+        this.sender.close();
+        this.receiver.close();
+
         try {
-
-            this.listener.close();
-
-            log("TCPSocket.close()", "Shutting down socket ...");
-
-            this.running.set(false);
             this.listener.join();
             this.sender.join();
             this.receiver.join();
@@ -290,12 +336,58 @@ public class TCPSocket {
         return packets;
     }
 
+
+    private void shutdown(Packet packet) {
+        // Shutdown listener
+        this.listener.close();
+
+        // Send ACK
+        this.receiver.sendACK(packet);
+
+        // Send FIN
+        Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
+        this.sequenceNumber++;
+        this.sender.put(FINPacket);
+
+        // Wait for ACK
+        while(true) {
+            byte[] buf = new byte[1024];
+            DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
+
+            // Listen for ACK
+            this.socket.receive(dgPacket);
+            Packet packet = Packet.fromBuffer(buf);
+
+            if (packet.getType() == Packet.ACK){
+                log("TCPSocket.shutdown()", "Received ACK.");
+                break;
+            }
+            else
+                this.receiver.put(packet);
+        }
+
+        log("TCPSocket.shutdown()", "Shutting down socket ...");
+    
+        this.sender.close();
+        this.receiver.close();
+
+        try {
+            this.listener.join();
+            this.sender.join();
+            this.receiver.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
     // Threads
 
     /**
      *
      */
     private class Sender extends Thread {
+
+        private AtomicBoolean running = new AtomicBoolean(true);
 
         private PriorityBlockingQueue<Packet> sendBuffer;
         private int nextSeqNum;
@@ -331,6 +423,10 @@ public class TCPSocket {
             log("TCPSocket.Sender.run()", "Closing Sender");
         }
 
+        public void close() {
+            this.running.set(false);
+        }
+
         public void put(Packet packet) throws IOException {
             if (packet.getSequenceNumber() < base + WINDOW_SIZE) {
                 sendBuffer.add(packet);
@@ -364,6 +460,9 @@ public class TCPSocket {
      *
      */
     private class Receiver extends Thread {
+
+        private AtomicBoolean running = new AtomicBoolean(true);
+
         private PriorityBlockingQueue<Packet> receiveBuffer;
         private int base;
 
@@ -382,6 +481,10 @@ public class TCPSocket {
                 }
             }
             log("TCPSocket.Receiver.run()", "Closing Receiver");
+        }
+
+        public void close() {
+            this.running.set(false);
         }
 
         public void put(Packet packet) throws IOException {
@@ -412,6 +515,8 @@ public class TCPSocket {
 
     private class Listener extends Thread {
 
+        private AtomicBoolean running = new AtomicBoolean(true);
+
         @Override
         public void run() {
             while(running.get()) {
@@ -424,6 +529,7 @@ public class TCPSocket {
                         break;
 
                     switch(packet.getType()) {
+                        // Forward SYNACK, ACK, and NAK to sender
                         case Packet.SYNACK:
                             synchronized(lock) {
                                 setPeerAddress(new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort()));
@@ -438,6 +544,9 @@ public class TCPSocket {
                         case Packet.DATA:
                             receiver.put(packet);
                             break;
+                        case Packet.FIN:
+                            shutdown(packet);
+                            break;
                     }
                 } catch (IOException e) {
                 }
@@ -445,12 +554,16 @@ public class TCPSocket {
             log("TCPSocket.Listener.run()", "Closing Listener");
         }
 
+        public void close() {
+            this.running.set(false);
+        }
+
         private Packet listenForPacket() throws IOException {
             byte[] buf = new byte[Packet.PACKET_SIZE];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
             // Set a receive timeout to prevent indefinite blocking
-            socket.setSoTimeout(500);
+            socket.setSoTimeout(100);
 
             while (running.get()) {
                 try {
@@ -465,63 +578,6 @@ public class TCPSocket {
             }
 
             return null;
-        }
-
-        private void processFIN(Packet packet) {
-
-        }
-
-        public void close() {
-
-            pause();
-
-            // Send FIN to server
-            log("TCPSocket.Listener.close()", "Sending FIN to " + this.peerAddr.getAddress() + ":" + this.peerAddr.getPort());
-            Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.peerAddr.getAddress(), this.peerAddr.getPort(), new byte[0]);
-            this.socket.send(FINPacket.toDatagramPacket(router));
-            this.sequenceNumber++;
-
-            // Wait for ACK
-            listener.pause();
-
-            log("TCPSocket.Listener.close()", "Waiting for ACK ...");
-
-            while(true) {
-                byte[] buf = new byte[1024];
-                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
-
-                // Listen for ACK
-                this.socket.receive(padgPacketcket);
-                Packet packet = Packet.fromBuffer(buf);
-
-                if (packet.getType() == Packet.ACK && packet.getSequenceNumber() == FINPacket.getSequenceNumber()) {
-                    log("TCPSocket.Listener.close()", "Received ACK.");
-                    break;
-                }
-                else
-                    this.receiver.put(packet);
-            }
-
-            log("TCPSocket.Listener.close()", "Waiting for FIN ...");
-
-            while(true) {
-                byte[] buf = new byte[1024];
-                DatagramPacket dgPacket = new DatagramPacket(buf, buf.length);
-
-                // Listen for FIN
-                this.socket.receive(padgPacketcket);
-                Packet packet = Packet.fromBuffer(buf);
-
-                if (packet.getType() == Packet.FIN){
-                    log("TCPSocket.Listener.close()", "Received FIN.");
-                    log("TCPSocket.Listener.close()", "Sending ACK ...");
-                    this.receiver.sendACK(packet);
-                    break;
-                }
-                else
-                    this.receiver.put(packet);
-             }
-
         }
     }
 }
