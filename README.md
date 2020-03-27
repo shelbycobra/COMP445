@@ -9,6 +9,7 @@
     * Simulate concurrent clients
     * multiple packets
     * timeout scenarios
-    * 
+    * drop packet scenarios
 * ../.. fix in httpfs
 * verbose
+* Finish selective repeat protocol - especially 'receiver'
