@@ -9,7 +9,13 @@
     - [ ] Simulate concurrent clients
     - [ ] multiple packets
     - [ ] timeout scenarios
-    - [ ] drop packet scenarios
-- [ ] ../.. fix in httpfs
+          - drop DATA --> send NAK??
+          - drop ACK --> resend DATA
+- [x] ../.. fix in httpfs
 - [x] verbose
-- [ ] Finish selective repeat protocol - especially 'receiver'
+- [x] Finish selective repeat protocol - especially 'receiver'
+- [x] Fix POST
+- [x] Fix GET
+- [x] Put Socket code into a separate package
+- [x] Parse Arguments properly
+- [ ] Documentation

@@ -1,16 +1,24 @@
-import java.net.*;
-import java.io.*;
+import java.io.IOException;
+import java.io.File;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+
 import java.util.ArrayList;
 import java.util.Scanner;
+
 import java.lang.Exception;
+
+import java.net.UnknownHostException;
 import java.net.InetSocketAddress;
 
+import tcp.TCPSocket;
 
 public class httpc {
+    private final static String CONTENT_LENGTH = "Content-Length: ";
+
     private TCPSocket socket;
-    private InputStream in;
-    private OutputStream out;
     private boolean verbose = false;
+    private boolean veryVerbose = false;
 
     // HTTP request components
     private String host = "";
@@ -26,6 +34,47 @@ public class httpc {
     private int routerPort;
 
     /**
+     *
+     */
+    public static void main (String[] args) {
+        httpc httpc = new httpc();
+
+        if (args.length == 0 || (!args[0].equals("get") && !args[0].equals("post") && !args[0].equals("help"))) {
+            System.out.println("\nERROR:  No get, post or help method was provided.");
+            System.out.println("\tRun `java httpc help` for guidance.");
+            System.exit(1);
+        }
+
+        if (args[0].equals("help"))
+            httpc.help(args);
+
+        try {
+            httpc.parseArguments(args);
+
+            while(true) {
+                httpc.sendRequest(args[0]);
+                httpc.handleResponse();
+
+                if (!httpc.requiresRedirection())
+                    break;
+            }
+
+        } catch(UnknownHostException e) {
+            System.out.println(e);
+        } catch(IOException e) {
+            System.out.println(e);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("\n>>>> Run `java httpc help` for guidance.");
+        }
+    }
+
+    /**
+     * Default constructor
+     */
+    public httpc() {}
+
+    /**
      * Prints help instructions to the console.
      */
     public void help(String[] args) {
@@ -35,8 +84,10 @@ public class httpc {
                 System.out.println("\nusage: java httpc get [-v] [-h key:value] URL\n"
                     + "\nGet executes a HTTP GET request for a given URL.\n\n"
                     + "\t-v\tPrints the detail of the response such as protocol, status, and headers.\n"
+                    + "\t-vv\tPrints the detail of the TCP socket as well as what is printed by '-v'.\n"
                     + "\t-h\tkey:value Associates headers to HTTP Request with the format 'key:value'.\n"
                     + "\t-o\tfile Writes the response content to the file.\n"
+                    + "\t-r\tFull router address.\n"
                 );
                 System.exit(0);
             }
@@ -44,10 +95,12 @@ public class httpc {
                 System.out.println("\nusage: httpc post [-v] [-h key:value] [-d inline-data] [-f file] URL\n"
                     + "\nPost executes a HTTP POST request for a given URL with inline data or from file.\n\n"
                     + "\t-v\tPrints the detail of the response such as protocol, status, and headers.\n"
+                    + "\t-vv\tPrints the detail of the TCP socket as well as what is printed by '-v'.\n"
                     + "\t-h\tkey:value Associates headers to HTTP Request with the format 'key:value'.\n"
                     + "\t-d\tstring Associates an inline data to the body HTTP POST request.\n"
                     + "\t-f\tfile Associates the content of a file to the body HTTP POST request.\n"
                     + "\t-o\tfile Writes the response content to the file.\n"
+                    + "\t-r\tFull router address.\n"
                     + "\nEither [-d] or [-f] can be used but not both.\n"
                 );
                 System.exit(0);
@@ -86,6 +139,9 @@ public class httpc {
 
             if (arg.equals("-v")){
                 this.verbose = true;
+            } else if (arg.equals("-vv")) {
+                this.veryVerbose = true;
+                this.verbose = true;
             } else if (arg.equals("-h")) {
                 index++;
                 StringBuilder headers = new StringBuilder();
@@ -101,9 +157,11 @@ public class httpc {
                     index++;
                     String word = args[index];
 
-                    if (word.matches("^-[a-z]$") // Matches an option
+                    System.out.println("in here : " + word);
+
+                    if (word.matches("^-[a-z][a-z]?$") // Matches an option
                     || word.matches("(http:\\/\\/)?[\\w\\d]+\\.[\\w\\d\\.]+[:?\\d]?[\\w\\d.\\/]+\\/?\\??[\\w\\d=&]*") // Matches a URL
-                    || word.matches("localhost:[0-9]+")) // Matches a localhost url
+                    || word.matches("localhost:[0-9]+.*")) // Matches a localhost url
                     {
                         index--;
                         break;
@@ -122,7 +180,7 @@ public class httpc {
                 index++;
                 Scanner reader = new Scanner(new File(args[index]));
                 while(reader.hasNext()) {
-                    this.body += reader.nextLine();
+                    this.body += reader.nextLine().trim().concat("\r\n");
                 }
                 reader.close();
                 if(dOptionUsed) {
@@ -132,7 +190,7 @@ public class httpc {
             } else if (arg.equals("-o")) {
                 index++;
                 this.outputFilePath = args[index];
-            } else if (arg.equals("--router")) {
+            } else if (arg.equals("-r")) {
                 index++;
                 int indexOfColon = args[index].indexOf(':');
                 this.routerAddr = args[index].substring(0, indexOfColon);
@@ -146,6 +204,9 @@ public class httpc {
 
             index++;
         }
+
+        if (this.routerAddr == null || this.routerPort == 0)
+            throw new Exception("No router address was provided.");
     }
 
     /**
@@ -156,17 +217,84 @@ public class httpc {
      * @throws Exception           If type is neither "get" nor "post".
      */
     public void sendRequest(String type) throws UnknownHostException, IOException, Exception{
-        socket = new TCPSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort), this.verbose);
+        socket = new TCPSocket(new InetSocketAddress(this.host, this.port), new InetSocketAddress(this.routerAddr, this.routerPort), this.veryVerbose);
 
         String request = buildRequest(type);
         System.out.println(request);
+
+        // Write request to server
         socket.write(request.getBytes());
 
-        String packet = socket.read();
-        this.response = packet + "\n\n";
+        // Wait for and build a response
+        buildResponse();
 
         socket.close();
     }
+
+     /**
+     * @param type Either "get" or "post".
+     * @throws Exception If type is neither "get" or "post".
+     * @return request string
+     */
+    private String buildRequest(String type) throws Exception {
+        if (type.equals("get")) {
+            return "GET " + this.page + this.query + " HTTP/1.0\r\n"
+                    + this.additionalHeaders
+                    + "\r\n";
+        } else if (type.equals("post")) {
+            return "POST " + this.page + this.query + " HTTP/1.0\r\n"
+                    + this.additionalHeaders
+                    + "Content-Length: " + this.body.length() + "\r\n"
+                    + "\r\n"
+                    + this.body;
+        } else {
+            throw new Exception("Invalid method: " + type);
+        }
+    }
+
+    private void buildResponse() throws IOException {
+        int contentLength = 0;
+        StringBuilder headers = new StringBuilder();
+        StringBuilder body = new StringBuilder();
+        String response = this.socket.read();
+        String[] lines = response.trim().split("\n");
+
+        // System.out.println("**** A BUILDING RESPONSE **** ");
+        boolean isHeader = true;
+        int pos = 0;
+        while (pos < lines.length) {
+            String line = lines[pos].trim();
+            pos++;
+
+            if (isHeader)
+                headers.append(line).append("\r\n");
+            else
+                body.append(line).append("\r\n");
+
+            if (line.contains(CONTENT_LENGTH))
+                contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()).trim());
+
+            if (line.equals(""))
+                isHeader = false;
+        }
+
+        // System.out.println("**** B BUILDING RESPONSE **** " + headers + " \n--------\n" + body);
+
+        if (body.length() < contentLength - 2) {
+
+            // remove the appended '\r\n' at the end of the body.
+            body.deleteCharAt(body.length() - 1);
+            body.deleteCharAt(body.length() - 1);
+
+            while (body.length() < contentLength - 2) {
+                // System.out.println("**** C BUILDING RESPONSE **** " + body.length() + " and " + (contentLength - 2));
+                body.append(socket.read());
+            }
+        }
+
+        this.response = headers.append(body.toString()).toString();
+    }
+
 
     /**
      * Handles the response by parsing the body from the header and either prints out the response or writes it to a file
@@ -217,27 +345,6 @@ public class httpc {
         }
 
         return false;
-    }
-
-    /**
-     * @param type Either "get" or "post".
-     * @throws Exception If type is neither "get" or "post".
-     * @return request string
-     */
-    private String buildRequest(String type) throws Exception {
-        if (type.equals("get")) {
-            return "GET " + this.page + this.query + " HTTP/1.0\r\n"
-                    + this.additionalHeaders
-                    + "\r\n";
-        } else if (type.equals("post")) {
-            return "POST " + this.page + this.query + " HTTP/1.0\r\n"
-                    + this.additionalHeaders
-                    + "Content-Length: " + this.body.length() + "\r\n"
-                    + "\r\n"
-                    + this.body;
-        } else {
-            throw new Exception("Invalid method: " + type);
-        }
     }
 
     /**
@@ -317,41 +424,5 @@ public class httpc {
         }
 
         return body.toString();
-    }
-
-    /**
-     *
-     */
-    public static void main (String[] args) {
-        httpc httpc = new httpc();
-
-        if (args.length == 0 || (!args[0].equals("get") && !args[0].equals("post") && !args[0].equals("help"))) {
-            System.out.println("\nERROR:  No get, post or help method was provided.");
-            System.out.println("\tRun `java httpc help` for guidance.");
-            System.exit(1);
-        }
-
-        if (args[0].equals("help"))
-            httpc.help(args);
-
-        try {
-            httpc.parseArguments(args);
-
-            while(true) {
-                httpc.sendRequest(args[0]);
-                httpc.handleResponse();
-
-                if (!httpc.requiresRedirection())
-                    break;
-            }
-
-        } catch(UnknownHostException e) {
-            System.out.println(e);
-        } catch(IOException e) {
-            System.out.println(e);
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.out.println("\tRun `java httpc help` for guidance.");
-        }
     }
 }

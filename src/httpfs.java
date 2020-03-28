@@ -1,7 +1,12 @@
 import java.net.*;
 import java.io.*;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+
+import tcp.TCPServerSocket;
+import tcp.TCPSocket;
 
 public class httpfs {
 
@@ -10,6 +15,29 @@ public class httpfs {
     private int port;
     private boolean verbose;
     private ReentrantLock mutex;
+
+    public static void main(String[] args) {
+        try {
+            if (args.length > 0 && args[0].equals("help"))
+            {
+                System.out.println("\nhttpfs is a simple file server.\n"
+                + "usage: httpfs [-v] [-p PORT] [-d PATH-TO-DIR]\n\n"
+                + "-v Prints debugging messages.\n"
+                + "-p Specifies the port number that the server will listen and serve at.\n"
+                + "   Default is 8080.\n"
+                + "-d Specifies the directory that the server will use to read/write\n"
+                + "   requested files. Default is the current directory when launching the\n"
+                + "   application.\n");
+            }
+            else
+            {
+                httpfs httpfs = new httpfs(args);
+                httpfs.listen();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     public httpfs(String[] args) {
         this.root = ".";
@@ -88,10 +116,10 @@ public class httpfs {
     }
 
     class ClientThread extends Thread {
-        private final static String CONTENT_LENGTH = "Content-Length: ",
-                                    HTTP_VERSION = "HTTP/",
-                                    GET = "GET",
-                                    POST = "POST";
+        private final static String CONTENT_LENGTH = "Content-Length: ";
+        private final static String HTTP_VERSION = "HTTP/";
+        private final static String GET = "GET";
+        private final static String POST = "POST";
 
         private TCPSocket socket;
         private ReentrantLock mutex;
@@ -129,44 +157,109 @@ public class httpfs {
             }
         }
 
+        private void parseFullRequest() throws IOException{
+            int contentLength = 0;
+            StringBuilder headers = new StringBuilder();
+            StringBuilder body = new StringBuilder();
+            String request = this.socket.read();
+            String[] requestLines = request.trim().split("\n");
+
+            if (!requestLines[0].contains(GET) && !requestLines[0].contains(POST))
+                sendErrorResponse(400);
+
+            boolean isHeader = true;
+            int pos = 1;
+            while (pos < requestLines.length) {
+                String line = requestLines[pos].trim();
+                pos++;
+
+                if (isHeader)
+                    headers.append(line).append("\r\n");
+                else
+                    body.append(line).append("\r\n");
+
+                if (line.contains(CONTENT_LENGTH))
+                    contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
+
+                if (line.equals(""))
+                    isHeader = false;
+            }
+
+            if (body.length() < contentLength - 2) {
+
+                // remove the appended '\r\n' at the end of the body.
+                body.deleteCharAt(body.length() - 1);
+                body.deleteCharAt(body.length() - 1);
+
+                while (body.length() < contentLength - 2) {
+                    // System.out.println("**** C BUILDING RESPONSE **** " + body.length() + " and " + (contentLength - 2));
+                    body.append(socket.read());
+                }
+            }
+
+            this.request = requestLines[0];
+            this.headers = headers.toString();
+            this.body = body.toString().substring(0, contentLength);
+
+            System.out.println(this.logHeader
+                + "REQUEST:\n-------------------------\n"
+                + this.request + this.body
+                + "\n-------------------------\n");
+        }
+
         private void parseRequestLine() {
             int indexOfHttpVersion = this.request.indexOf(HTTP_VERSION);
             int indexOfQuery = this.request.indexOf("?");
-            String path = null;
+            Path rootPath = Paths.get(this.root).toAbsolutePath().normalize();
 
-            System.out.println(this.request);
+            // System.out.println(this.request);
 
-            if (this.request.indexOf(GET) == 0) {
+            if (this.request.indexOf(GET) == 0)
+            {
+                String path = null;
+
+                // Find path in the request line
                 if (indexOfQuery != -1)
                     path = this.request.substring(GET.length()+1, indexOfQuery).trim();
                 else
                     path = this.request.substring(GET.length()+1, indexOfHttpVersion-1).trim();
 
-                if (path.equals("/"))
-                    sendList(this.root);
-                else if (path.contains("..")) //TODO: Fix this --> send error only if path goes above 'root'
-                    sendErrorResponse(403);
-                else
-                    sendFileContents(path);
-            } else if (this.request.indexOf(POST) == 0) {
-                path = this.request.substring(POST.length()+1, indexOfHttpVersion).trim();
+                // Get absolute normalized path of the requested path
+                Path requestedPath = Paths.get(this.root + path).toAbsolutePath().normalize();
 
-                if (path.equals("/") || path.contains("..")) //TODO: Fix this --> send error only if path goes above 'root'
+                // Process request
+                if (path.equals("/"))
+                    sendList(rootPath);
+                else if (!requestedPath.startsWith(rootPath))
                     sendErrorResponse(403);
                 else
-                    createOrOverrideFile(path);
+                    sendFileContents(requestedPath);
+            }
+            else if (this.request.indexOf(POST) == 0)
+            {
+                // Get path in the request line
+                String path = this.request.substring(POST.length()+1, indexOfHttpVersion).trim();
+
+                // Get absolute normalized path of the requested path
+                Path requestedPath = Paths.get(this.root + path).toAbsolutePath().normalize();
+
+                // Process request
+                if (path.equals("/") || !requestedPath.startsWith(rootPath))
+                    sendErrorResponse(403);
+                else
+                    createOrOverrideFile(requestedPath);
             } else {
-                sendErrorResponse(400); // Bad request
+                sendErrorResponse(400);
             }
         }
 
-        private void sendList(String path) {
+        private void sendList(Path path) {
             if (this.verbose)
                 System.out.println(this.logHeader + "Sending a list of files from " + path);
 
             try {
                 StringBuilder list = new StringBuilder();
-                File rootDir = new File(path);
+                File rootDir = path.toFile();
 
                 mutex.lock();
                 if (this.verbose)
@@ -184,7 +277,7 @@ public class httpfs {
 
                 String response = "HTTP/1.0 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
-                    + "Content-length: " + list.length() + "\r\n"
+                    + CONTENT_LENGTH + list.length() + "\r\n"
                     + "\r\n"
                     + list.toString();
                 this.socket.write(response);
@@ -194,32 +287,32 @@ public class httpfs {
             }
         }
 
-        private void sendFileContents(String path) {
+        private void sendFileContents(Path path) {
             if (this.verbose)
-                System.out.println(this.logHeader + "Sending contents of " + this.root + path + ".\n");
+                System.out.println(this.logHeader + "Sending contents of " + path + ".\n");
 
             try {
                 StringBuilder contents = new StringBuilder();
-                FileInputStream fin = null;
-                File file = new File(this.root + path);
+                BufferedReader reader = null;
+                File file = path.toFile();
 
                 if (!file.exists())
                     sendErrorResponse(404);
                 else if (!file.canRead())
                     sendErrorResponse(403);
                 else if (file.isDirectory())
-                    sendList(this.root + path);
+                    sendList(path);
                 else {
                     // File exists and has read permission
-                    fin = new FileInputStream(file);
+                    reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
 
                     mutex.lock();
                     if (this.verbose)
                         System.out.println(this.logHeader + "Entering List CS");
 
-                    int c;
-                    while ((c = fin.read()) != -1) {
-                        contents.append((char)c);
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        contents.append(line.trim()).append("\r\n");
                     }
 
                     if (this.verbose)
@@ -227,12 +320,12 @@ public class httpfs {
                     mutex.unlock();
 
                     String response = "HTTP/1.0 200 OK\r\n"
-                        + "Content-type: text/plain\r\n"
-                        + "Content-length: " + contents.length() + "\r\n"
+                        + "Content-Type: text/plain\r\n"
+                        + CONTENT_LENGTH + contents.length() + "\r\n"
                         + "\r\n"
                         + contents.toString();
                     this.socket.write(response);
-                    fin.close();
+                    reader.close();
 
                     if (this.verbose)
                         System.out.println(this.logHeader + contents);
@@ -244,10 +337,10 @@ public class httpfs {
             }
         }
 
-        private void createOrOverrideFile(String path) {
+        private void createOrOverrideFile(Path path) {
             try {
                 FileOutputStream fout = null;
-                File file = new File(this.root + path);
+                File file = path.toFile();
                 boolean override = this.headers.contains("Overwrite: true");
                 StringBuilder response = new StringBuilder();
 
@@ -255,12 +348,12 @@ public class httpfs {
                     file.getParentFile().mkdirs();
                     response.append("HTTP/1.0 201 Created\r\n");
                     if (this.verbose)
-                        System.out.println(this.logHeader + "Creating " + this.root + path + ".\n");
+                        System.out.println(this.logHeader + "Creating " + path + ".\n");
                 }
                 else if (file.canWrite()) {
                     response.append("HTTP/1.0 200 OK\r\n");
                     if (this.verbose)
-                        System.out.println(this.logHeader + "Modifying " + this.root + path + ".\n");
+                        System.out.println(this.logHeader + "Modifying " + path + ".\n");
                 }
                 else
                     sendErrorResponse(403);
@@ -314,77 +407,6 @@ public class httpfs {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-
-        private void parseFullRequest() throws IOException{
-            StringBuilder headers = new StringBuilder();
-            String request = this.socket.read();
-            int contentLength = 0;
-
-            String[] requestLines = request.trim().split("\n");
-
-            if (!requestLines[0].contains(GET) && !requestLines[0].contains(POST))
-                sendErrorResponse(400); // Bad request
-
-            // First line is always the header
-            this.request = requestLines[0];
-
-            System.out.println(this.logHeader + "REQUEST:\n-------------------------\n" + this.request);
-
-            int pos = 1;
-            while (pos < requestLines.length) {
-                String line = requestLines[pos];
-
-                if (line.contains(CONTENT_LENGTH))
-                    contentLength = Integer.parseInt(line.substring(CONTENT_LENGTH.length()));
-
-                headers.append(line).append("\r\n");
-
-                // Break at end of headers.
-                if (line.equals("")) break;
-                pos++;
-            }
-
-            this.headers = headers.toString();
-
-            // Create the body of the request
-            StringBuilder body = new StringBuilder();
-
-            while (pos < requestLines.length) {
-                body.append(requestLines[pos]);
-            }
-
-            while (body.length() < contentLength) {
-                String data = socket.read();
-                body.append(data);
-            }
-
-            this.body = body.toString().substring(0, contentLength);
-
-            System.out.println(this.body + "\n-------------------------\n");
-        }
-    }
-
-    public static void main(String[] args) {
-        try {
-            if (args.length > 0 && args[0].equals("help"))
-            {
-                System.out.println("\nhttpfs is a simple file server.\n"
-                + "usage: httpfs [-v] [-p PORT] [-d PATH-TO-DIR]\n\n"
-                + "-v Prints debugging messages.\n"
-                + "-p Specifies the port number that the server will listen and serve at.\n"
-                + "   Default is 8080.\n"
-                + "-d Specifies the directory that the server will use to read/write\n"
-                + "   requested files. Default is the current directory when launching the\n"
-                + "   application.\n");
-            }
-            else
-            {
-                httpfs httpfs = new httpfs(args);
-                httpfs.listen();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 }
