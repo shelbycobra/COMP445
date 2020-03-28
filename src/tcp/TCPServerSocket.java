@@ -3,19 +3,15 @@ package tcp;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
-
 import java.io.IOException;
-
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketAddress;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -95,10 +91,7 @@ public class TCPServerSocket {
 
         } catch (IOException e) {
             e.printStackTrace();
-        } 
-        /*catch (InterruptedException e) {
-            e.printStackTrace();
-        }*/
+        }
 
         return null;
     }
@@ -180,7 +173,6 @@ public class TCPServerSocket {
             while (!clients.containsKey(peerAddr));
 
             // Get address of server-side TCPSocket client
-            System.out.println("PEER ADDRESS = " + peerAddr);
             TCPSocket clientSocket = clients.get(peerAddr);
 
             // Send packet to client

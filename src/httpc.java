@@ -280,7 +280,7 @@ public class httpc {
 
         // System.out.println("**** B BUILDING RESPONSE **** " + headers + " \n--------\n" + body);
 
-        if (body.length() < contentLength - 2) {
+        if (body.length() < contentLength - 2 && body.length() > 0) {
 
             // remove the appended '\r\n' at the end of the body.
             body.deleteCharAt(body.length() - 1);

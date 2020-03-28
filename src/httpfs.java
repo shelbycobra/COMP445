@@ -1,10 +1,15 @@
-import java.net.*;
-import java.io.*;
+import java.io.IOException;
+import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
-
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import tcp.TCPServerSocket;
 import tcp.TCPSocket;
 
@@ -14,6 +19,7 @@ public class httpfs {
     private String root;
     private int port;
     private boolean verbose;
+    private boolean veryVerbose;
     private ReentrantLock mutex;
 
     public static void main(String[] args) {
@@ -23,6 +29,7 @@ public class httpfs {
                 System.out.println("\nhttpfs is a simple file server.\n"
                 + "usage: httpfs [-v] [-p PORT] [-d PATH-TO-DIR]\n\n"
                 + "-v Prints debugging messages.\n"
+                + "-vv Prints debugging messages.\n"
                 + "-p Specifies the port number that the server will listen and serve at.\n"
                 + "   Default is 8080.\n"
                 + "-d Specifies the directory that the server will use to read/write\n"
@@ -48,30 +55,6 @@ public class httpfs {
         parseArgs(args);
     }
 
-    public void listen() throws IOException{
-
-        server = new TCPServerSocket(this.port);
-
-        server.setVerbose(this.verbose);
-
-        try {
-            int id = 1;
-
-            while(true) {
-                // Accept incoming client requests
-                TCPSocket client = server.accept();
-
-                // Handle client request
-                ClientThread clientThread = new ClientThread(client, this.mutex, this.verbose, this.root, id);
-                clientThread.start();
-                id++;
-            }
-
-        } catch(Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     private void parseArgs(String[] args){
         int index = 0;
 
@@ -79,6 +62,12 @@ public class httpfs {
             if (args[index].equals("-v")) {
                 index++;
                 this.verbose = true;
+                continue;
+            }
+            if (args[index].equals("-vv")) {
+                index++;
+                this.verbose = true;
+                this.veryVerbose = true;
                 continue;
             }
             if (args[index].equals("-p")) {
@@ -115,6 +104,31 @@ public class httpfs {
         }
     }
 
+    public void listen() throws IOException{
+
+        server = new TCPServerSocket(this.port);
+
+        server.setVerbose(this.veryVerbose);
+
+        try {
+            int id = 1;
+
+            while(true) {
+                // Accept incoming client requests
+                TCPSocket client = server.accept();
+
+                // Handle client request
+                ClientThread clientThread = new ClientThread(client, this.mutex, this.verbose, this.root, id);
+                clientThread.start();
+                id++;
+            }
+
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+
+    }
+
     class ClientThread extends Thread {
         private final static String CONTENT_LENGTH = "Content-Length: ";
         private final static String HTTP_VERSION = "HTTP/";
@@ -137,7 +151,7 @@ public class httpfs {
             this.verbose = verbose;
             this.root = root;
             this.id = id;
-            this.logHeader = "Client [" + this.id + "] ";
+            this.logHeader = "ClientThread [" + this.id + "]";
             this.headers = "";
             this.request = "";
             this.body = "";
@@ -145,8 +159,7 @@ public class httpfs {
 
         public void run(){
             try {
-                if (this.verbose)
-                    System.out.println(this.logHeader + "is running.\n");
+                log(this.logHeader, "is running.");
 
                 parseFullRequest();
                 parseRequestLine();
@@ -154,6 +167,14 @@ public class httpfs {
                 this.socket.close();
             } catch (Exception e) {
                 e.printStackTrace();
+            }
+        }
+
+        private void log(String method, String message) {
+            if (this.verbose) {
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd:MM:yyy HH:mm:ss");
+                LocalDateTime now = LocalDateTime.now();
+                System.out.println(String.format("[%s] %s -- %s", dtf.format(now), method , message));
             }
         }
 
@@ -201,10 +222,9 @@ public class httpfs {
             this.headers = headers.toString();
             this.body = body.toString().substring(0, contentLength);
 
-            System.out.println(this.logHeader
-                + "REQUEST:\n-------------------------\n"
-                + this.request + this.body
-                + "\n-------------------------\n");
+            log(this.logHeader, "is requesting:"
+                + "\n\n" + this.request
+                + "\n" + this.headers + this.body + "\n");
         }
 
         private void parseRequestLine() {
@@ -254,32 +274,31 @@ public class httpfs {
         }
 
         private void sendList(Path path) {
-            if (this.verbose)
-                System.out.println(this.logHeader + "Sending a list of files from " + path);
+            log(this.logHeader, "Sending a list of files from " + path);
 
             try {
                 StringBuilder list = new StringBuilder();
                 File rootDir = path.toFile();
 
                 mutex.lock();
-                if (this.verbose)
-                    System.out.println(this.logHeader + "Entering List CS");
+                log(this.logHeader, "Entering List CS");
                 String[] entries = rootDir.list();
-                if (this.verbose)
-                    System.out.println(this.logHeader + "Leaving List CS");
+                log(this.logHeader, "Leaving List CS");
                 mutex.unlock();
 
                 for (String e : entries)
                     list.append(e).append("\r\n");
 
-                if (this.verbose)
-                    System.out.println(list);
+                log(this.logHeader, list.toString());
 
                 String response = "HTTP/1.0 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
                     + CONTENT_LENGTH + list.length() + "\r\n"
                     + "\r\n"
                     + list.toString();
+
+                log(this.logHeader, "Sending response.\n" + response);
+
                 this.socket.write(response);
             } catch (Exception e) {
                 sendErrorResponse(500);
@@ -288,8 +307,7 @@ public class httpfs {
         }
 
         private void sendFileContents(Path path) {
-            if (this.verbose)
-                System.out.println(this.logHeader + "Sending contents of " + path + ".\n");
+            log(this.logHeader, "Sending contents of " + path + ".\n");
 
             try {
                 StringBuilder contents = new StringBuilder();
@@ -307,16 +325,14 @@ public class httpfs {
                     reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
 
                     mutex.lock();
-                    if (this.verbose)
-                        System.out.println(this.logHeader + "Entering List CS");
+                    log(this.logHeader, "Entering List CS");
 
                     String line;
                     while ((line = reader.readLine()) != null) {
                         contents.append(line.trim()).append("\r\n");
                     }
 
-                    if (this.verbose)
-                        System.out.println(this.logHeader + "Leaving Read CS");
+                    log(this.logHeader, "Leaving Read CS");
                     mutex.unlock();
 
                     String response = "HTTP/1.0 200 OK\r\n"
@@ -327,8 +343,7 @@ public class httpfs {
                     this.socket.write(response);
                     reader.close();
 
-                    if (this.verbose)
-                        System.out.println(this.logHeader + contents);
+                    log(this.logHeader, contents.toString());
                 }
 
             } catch (Exception e) {
@@ -347,21 +362,18 @@ public class httpfs {
                 if (!file.exists()) {
                     file.getParentFile().mkdirs();
                     response.append("HTTP/1.0 201 Created\r\n");
-                    if (this.verbose)
-                        System.out.println(this.logHeader + "Creating " + path + ".\n");
+                    log(this.logHeader, "Creating " + path);
                 }
                 else if (file.canWrite()) {
                     response.append("HTTP/1.0 200 OK\r\n");
-                    if (this.verbose)
-                        System.out.println(this.logHeader + "Modifying " + path + ".\n");
+                    log(this.logHeader, "Modifying " + path);
                 }
                 else
                     sendErrorResponse(403);
 
                 mutex.lock();
 
-                if (this.verbose)
-                    System.out.println(this.logHeader + "Entering Write CS.");
+                log(this.logHeader, "Entering Write CS.");
 
                 // Enter critical section
                 fout = new FileOutputStream(file, !override);
@@ -372,8 +384,7 @@ public class httpfs {
                 fout.close();
                 //Exit critical section
 
-                if (this.verbose)
-                    System.out.println(this.logHeader + "Leaving Write CS.");
+                log(this.logHeader, "Leaving Write CS.");
 
                 mutex.unlock();
 
@@ -385,8 +396,7 @@ public class httpfs {
         }
 
         private void sendErrorResponse(int code) {
-            if (this.verbose)
-                System.out.println(this.logHeader + "Sending Error response " + code);
+            log(this.logHeader, "Sending Error response " + code);
 
             try {
                 switch(code) {

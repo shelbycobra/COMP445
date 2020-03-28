@@ -113,8 +113,9 @@ public class Packet {
 
     @Override
     public String toString() {
-        return "#" + sequenceNumber + " " + this.types[this.type] + " " + peerAddress + ":" + peerPort
-            + "\n" + new String(payload);
+        String payloadStr = new String(this.payload).trim().equals("") ? "" : "\n\n" + new String(this.payload);
+        return "#" + this.sequenceNumber + " " + this.types[this.type] + " " + this.peerAddress + ":" + this.peerPort
+            + payloadStr;
     }
 
     public static class Builder {
