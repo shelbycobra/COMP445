@@ -1,14 +1,12 @@
 # How to run
 Run the router, client and server in separate terminal windows.  
-## Step 1. Run the router
+## Run the router
 
 **Example**
 ```
 ./router --port 3000 --drop-rate 0.2 --max-delay 10ms --seed 1
 ```
-## Step 2. Run the server and client
-
-### Running the HTTP file server
+## Running the HTTP file server
 
 `./run.sh httpfs [OPTIONS]`
 
@@ -17,7 +15,7 @@ Run the router, client and server in separate terminal windows.
 ./run.sh httpfs -vv
 ```
 
-### Running the HTTP client
+## Running the HTTP client
 Open up a new terminal window and run the following:  
 
 `./run.sh httpc [OPTIONS]`
@@ -30,14 +28,14 @@ Open up a new terminal window and run the following:
 # Testing
 
 Run the router and the tests in separate terminal windows.
-## Step 1. Run the router at port 3000
+## Run the router at port 3000
 
 **Example**
 ```
 ./router --port 3000 --drop-rate 0 --max-delay 0 --seed 1
 ```
 
-## Step 2. Run the tests
+## Run the tests
 
 ### Running concurrent client tests
 
