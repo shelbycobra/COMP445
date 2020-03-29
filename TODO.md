@@ -5,7 +5,7 @@
 - [x] Modify httpfs to parse new packet format
 - [x] Modify httpc to parse new packet format
 - [ ] Write tests
-    - [ ] Simulate concurrent clients
+    - [x] Simulate concurrent clients
     - [ ] multiple packets
     - [ ] timeout scenarios
 - [x] ../.. fix in httpfs
