@@ -1,6 +1,7 @@
 # How to run
-
+Run the router, client and server in separate terminal windows.  
 ## Step 1. Run the router
+
 **Example**
 ```
 ./router --port 3000 --drop-rate 0.2 --max-delay 10ms --seed 1
@@ -17,6 +18,7 @@
 ```
 
 ### Running the HTTP client
+Open up a new terminal window and run the following:  
 
 `./run.sh httpc [OPTIONS]`
 
@@ -27,6 +29,7 @@
 
 # Testing
 
+Run the router and the tests in separate terminal windows.
 ## Step 1. Run the router at port 3000
 
 **Example**
