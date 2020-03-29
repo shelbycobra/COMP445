@@ -1,5 +1,8 @@
 # How to run
 Run the router, client and server in separate terminal windows.  
+  
+`run.sh` compiles and runs the code.  
+
 ## Run the router
 
 **Example**
