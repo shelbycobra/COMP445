@@ -8,7 +8,7 @@ Run the router, client and server in separate terminal windows.
 ```
 ## Running the HTTP file server
 
-`./run.sh httpfs [OPTIONS]`
+`./run.sh httpfs help`
 
 **Example**
 ```
@@ -18,7 +18,7 @@ Run the router, client and server in separate terminal windows.
 ## Running the HTTP client
 Open up a new terminal window and run the following:  
 
-`./run.sh httpc [OPTIONS]`
+`./run.sh httpc help`
 
 **Example**
 ```
