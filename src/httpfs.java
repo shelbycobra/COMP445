@@ -27,14 +27,14 @@ public class httpfs {
             if (args.length > 0 && args[0].equals("help"))
             {
                 System.out.println("\nhttpfs is a simple file server.\n"
-                + "usage: httpfs [-v] [-p PORT] [-d PATH-TO-DIR]\n\n"
-                + "-v Prints debugging messages.\n"
-                + "-vv Prints debugging messages.\n"
-                + "-p Specifies the port number that the server will listen and serve at.\n"
-                + "   Default is 8080.\n"
-                + "-d Specifies the directory that the server will use to read/write\n"
-                + "   requested files. Default is the current directory when launching the\n"
-                + "   application.\n");
+                + "usage: httpfs [-v|-vv] [-p PORT] [-d PATH-TO-DIR]\n\n"
+                + "-v  Prints debugging messages.\n"
+                + "-vv Adds TCPServerSocket debugging messages to regular debugging mesages.\n"
+                + "-p  Specifies the port number that the server will listen and serve at.\n"
+                + "    Default is 8080.\n"
+                + "-d  Specifies the directory that the server will use to read/write\n"
+                + "    requested files. Default is the current directory when launching the\n"
+                + "    application.\n");
             }
             else
             {

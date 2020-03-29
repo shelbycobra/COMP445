@@ -132,26 +132,25 @@ public class TCPSocket {
      * @throws IOException
      */
     public void close() throws IOException {
-        log("TCPSocket.close()", "Closing...");
-
-        this.sender.clear();
-        this.receiver.clear();
-
-        log("TCPSocket.close()", "Sending FIN to " + this.destAddr.getAddress() + ":" + this.destAddr.getPort());
-
-        Packet FINPacket = new Packet(Packet.FIN, this.sequenceNumber, this.destAddr.getAddress(), this.destAddr.getPort(), new byte[0]);
-
-        incrementSeqNum();
-
-        this.sender.put(FINPacket);
-
         try {
+            log("TCPSocket.close()", "Closing...");
+
+            this.sender.clear();
+            this.sender.put(new Packet(Packet.FIN, this.sequenceNumber, this.destAddr.getAddress(), this.destAddr.getPort(), new byte[0]));
+
+            log("TCPSocket.close()", "Sending FIN to " + this.destAddr.getAddress() + ":" + this.destAddr.getPort());
             log("TCPSocket.close()", "Waiting for ACK ...");
+
             waitingForFINACK.acquire();
+
             log("TCPSocket.close()", "Received ACK.");
             log("TCPSocket.close()", "Waiting for FIN ...");
+
             waitingForFIN.acquire();
+
             log("TCPSocket.close()", "Shutting down socket ...");
+
+            this.receiver.clear();
 
             this.sender.close();
             this.receiver.close();
@@ -162,12 +161,12 @@ public class TCPSocket {
             this.receiver.join();
             this.listener.join();
             this.processor.join();
+
+            log("TCPSocket.close()", "Socket Closed.");
+            this.socket.close();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
-        log("TCPSocket.close()", "Socket Closed.");
-        this.socket.close();
     }
 
     /**
@@ -425,7 +424,7 @@ public class TCPSocket {
 
             this.estimatedRTT = 0;
             this.devianceRTT = 0;
-            this.timeoutInterval = 1000; // Start timeout at 1 minute.
+            this.timeoutInterval = 1000; // Start timeout at 1 second.
         }
 
         /**
@@ -444,8 +443,6 @@ public class TCPSocket {
                     }
 
                     if (!running.get()) {
-                        log("TCPSocket.Sender.run()", "Cancelling all timers.");
-                        timerScheduler.cancel();
                         break;
                     }
                 }
@@ -466,10 +463,12 @@ public class TCPSocket {
          */
         public void clear() throws IOException {
             log ("TCPSocket.Sender.clear()", "Clearing all send data");
-            while(!sendBuffer.isEmpty()) {
+            while(!sendBuffer.isEmpty()){
                 sendPacket(sendBuffer.poll());
             }
-            while(!ackWaitQueue.isEmpty());
+            ackWaitQueue.clear();
+            log("TCPSocket.Sender.run()", "Cancelling all timers.");
+            timerScheduler.cancel();
         }
 
         /**
@@ -778,6 +777,7 @@ public class TCPSocket {
                                 break;
                             case Packet.FIN:
                                 waitingForFIN.release();
+                                sender.clear();
                             case Packet.DATA:
                                 receiver.put(packet);
                                 break;

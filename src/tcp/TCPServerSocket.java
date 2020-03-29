@@ -21,7 +21,6 @@ public class TCPServerSocket {
     private boolean verbose;
     private DatagramSocket socket;
     private InetSocketAddress router;
-    private ArrayBlockingQueue<Packet> packetQueue;
     private ArrayBlockingQueue<Packet> synQueue;
     private ArrayBlockingQueue<Packet> ackQueue;
     private HashMap<InetSocketAddress, TCPSocket> clients;
@@ -32,7 +31,7 @@ public class TCPServerSocket {
     /**
      * Constructor for a TCPServerSocket.
      *
-     * @param port The port number it will listen for packets.
+     * @param port The port number it will listen to for packets.
      * @throws IOException
      */
     public TCPServerSocket(int port) throws IOException {
@@ -42,9 +41,7 @@ public class TCPServerSocket {
         this.socket = new DatagramSocket(port);
         System.out.println("Server is listening on port " + this.port);
 
-        // Initialize map of clients
         this.clients = new HashMap<>();
-        this.packetQueue = new ArrayBlockingQueue<>(1000);
         this.synQueue = new ArrayBlockingQueue<>(1000);
         this.ackQueue = new ArrayBlockingQueue<>(1000);
 
@@ -153,8 +150,7 @@ public class TCPServerSocket {
                     }
 
                     // Create Packet from buffer
-                    Packet p = Packet.fromBuffer(buf);
-                    packetQueue.add(p);
+                    processor.put(Packet.fromBuffer(buf));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -167,6 +163,15 @@ public class TCPServerSocket {
      * depending on its type.
      */
     private class Processor extends Thread {
+        private ArrayBlockingQueue<Packet> packetQueue;
+
+        /**
+         * Constructor for the Processor thread
+         */
+        public Processor() {
+            this.packetQueue = new ArrayBlockingQueue<>(1000);
+        }
+
         @Override
         public void run() {
             while(true) {
@@ -195,6 +200,14 @@ public class TCPServerSocket {
                     }
                 }
             }
+        }
+
+        /**
+         * Adds a packet to the packetQueue.
+         * @param packet
+         */
+        public void put(Packet packet) {
+            this.packetQueue.add(packet);
         }
 
         /**

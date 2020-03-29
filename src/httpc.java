@@ -81,7 +81,7 @@ public class httpc {
         // Print out help get or help post
         if (args.length >= 2) {
             if (args[1].equals("get")) {
-                System.out.println("\nusage: java httpc get [-v] [-h key:value] URL\n"
+                System.out.println("\nusage: java httpc get [-v|-vv] [-h key:value] -r routerAddress URL\n"
                     + "\nGet executes a HTTP GET request for a given URL.\n\n"
                     + "\t-v\tPrints the detail of the response such as protocol, status, and headers.\n"
                     + "\t-vv\tPrints the detail of the TCP socket as well as what is printed by '-v'.\n"
@@ -92,7 +92,7 @@ public class httpc {
                 System.exit(0);
             }
             if (args[1].equals("post")) {
-                System.out.println("\nusage: httpc post [-v] [-h key:value] [-d inline-data] [-f file] URL\n"
+                System.out.println("\nusage: httpc post [-v|-vv] [-h key:value] [-d inline-data] [-f file]  -r routerAddress URL\n"
                     + "\nPost executes a HTTP POST request for a given URL with inline data or from file.\n\n"
                     + "\t-v\tPrints the detail of the response such as protocol, status, and headers.\n"
                     + "\t-vv\tPrints the detail of the TCP socket as well as what is printed by '-v'.\n"

@@ -1,21 +1,38 @@
-# TODO
+# How to run
 
-- [x] close()
-- [ ] NAKs
-- [ ] ACK timeout
-- [x] Modify httpfs to parse new packet format
-- [x] Modify httpc to parse new packet format
-- [ ] Write tests
-    - [ ] Simulate concurrent clients
-    - [ ] multiple packets
-    - [ ] timeout scenarios
-          - drop DATA --> send NAK??
-          - drop ACK --> resend DATA
-- [x] ../.. fix in httpfs
-- [x] verbose
-- [x] Finish selective repeat protocol - especially 'receiver'
-- [x] Fix POST
-- [x] Fix GET
-- [x] Put Socket code into a separate package
-- [x] Parse Arguments properly
-- [ ] Documentation
+## Running the HTTP file server
+
+
+```
+./run.sh httpfs [OPTIONS]
+```
+
+### Example
+```
+./run.sh httpfs -vv
+```
+
+## Running the HTTP client
+
+```
+./run.sh httpc [OPTIONS]
+```
+
+### Example
+```
+./run.sh httpc get -r localhost:3000 localhost:8080 -vv
+```
+
+# Testing
+
+## Running concurrent client tests
+
+```
+./test.sh concurrent
+```
+
+## Running unit tests
+
+```
+./test.sh unit
+```
