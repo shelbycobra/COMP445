@@ -6,6 +6,9 @@
 - [x] Modify httpc to parse new packet format
 - [ ] Write tests
     - [x] Simulate concurrent clients
+    - [x] 3-way handhake
+    - [x] Write and read packets
+    - [x] Close socket and serversocket
     - [ ] multiple packets
     - [ ] timeout scenarios
 - [x] ../.. fix in httpfs
