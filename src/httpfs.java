@@ -183,7 +183,7 @@ public class httpfs {
             StringBuilder headers = new StringBuilder();
             StringBuilder body = new StringBuilder();
             String request = this.socket.read();
-            String[] requestLines = request.trim().split("\n");
+            String[] requestLines = request.split("\n");
 
             if (!requestLines[0].contains(GET) && !requestLines[0].contains(POST))
                 sendErrorResponse(400);
@@ -191,7 +191,7 @@ public class httpfs {
             boolean isHeader = true;
             int pos = 1;
             while (pos < requestLines.length) {
-                String line = requestLines[pos].trim();
+                String line = requestLines[pos].replaceFirst("\\s++$", "");
                 pos++;
 
                 if (isHeader)
@@ -231,8 +231,6 @@ public class httpfs {
             int indexOfHttpVersion = this.request.indexOf(HTTP_VERSION);
             int indexOfQuery = this.request.indexOf("?");
             Path rootPath = Paths.get(this.root).toAbsolutePath().normalize();
-
-            // System.out.println(this.request);
 
             if (this.request.indexOf(GET) == 0)
             {
@@ -329,7 +327,7 @@ public class httpfs {
 
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        contents.append(line.trim()).append("\r\n");
+                        contents.append(line.replaceFirst("\\s++$", "")).append("\r\n");
                     }
 
                     log(this.logHeader, "Leaving Read CS");

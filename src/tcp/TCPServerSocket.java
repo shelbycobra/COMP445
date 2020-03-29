@@ -21,7 +21,6 @@ public class TCPServerSocket {
     private boolean verbose;
     private DatagramSocket socket;
     private InetSocketAddress router;
-    private InetSocketAddress requestAddr;
     private ArrayBlockingQueue<Packet> packetQueue;
     private ArrayBlockingQueue<Packet> synQueue;
     private ArrayBlockingQueue<Packet> ackQueue;
@@ -30,6 +29,12 @@ public class TCPServerSocket {
     private Processor processor;
     private Listener listener;
 
+    /**
+     * Constructor for a TCPServerSocket.
+     *
+     * @param port The port number it will listen for packets.
+     * @throws IOException
+     */
     public TCPServerSocket(int port) throws IOException {
         this.port = port;
 
@@ -50,68 +55,86 @@ public class TCPServerSocket {
         this.processor.start();
     }
 
+    /**
+     * Sets up a connection with a client using a 3-way handshake.
+     * @return A server-side TCPSocket client that is connected to the requesting client.
+     * @throws IOException
+     */
     public TCPSocket accept() throws IOException {
-        try {
-            // Thread.sleep(200);
-            log("TCPServerSocket.accept()", "Accepting new connection");
+        InetSocketAddress requestAddress;
+        Packet SYNPacket;
+        TCPSocket clientSocket;
 
-            // Wait for SYN packet
-            while(synQueue.isEmpty());
-            Packet SYNPacket = synQueue.poll();
+        log("TCPServerSocket.accept()", "Accepting new connection");
 
-            setRequestAddress(new InetSocketAddress(SYNPacket.getPeerAddress(), SYNPacket.getPeerPort()));
+        // Wait for SYN packet
+        while(true) {
+            if(!this.synQueue.isEmpty()) {
+                SYNPacket  = this.synQueue.poll();
+                requestAddress = new InetSocketAddress(SYNPacket.getPeerAddress(), SYNPacket.getPeerPort());
 
-            log("TCPServerSocket.accept()", "Received SYN from " + requestAddr + ". Creating client socket ...");
-
-            TCPSocket clientSocket = new TCPSocket(this.requestAddr, this.router, this.verbose, false);
-
-            // Forward SYN packet to new server-side TCPSocket client so that it can send a SYNACK packet to the requesting client.
-            clientSocket.forward(SYNPacket);
-
-            log("TCPServerSocket.accept()", "Client socket created. Sending SYNACK ...");
-            log("TCPServerSocket.accept()", "Waiting for ACK ...");
-
-            // Wait for Listener thread to put in corresponding ACK packet
-            while(true) {
-                if (!ackQueue.isEmpty()) {
-                    Packet ACK = ackQueue.poll();
-                    if (ACK.getPeerAddress().equals(this.requestAddr.getAddress())
-                        && ACK.getPeerPort() == this.requestAddr.getPort()) {
-                        break;
-                    }
-                }
+                // Break if a TCPSocket for the requesting address doesn't already exist
+                if (!clients.containsKey(requestAddress))
+                    break;
             }
+        }
 
-            log("TCPServerSocket.accept()", "Received ACK from client. Client is now connected.");
+        log("TCPServerSocket.accept()", "Received SYN from " + requestAddress + ". Creating client socket ...");
 
-            this.clients.put(requestAddr, clientSocket);
-            setRequestAddress(null);
+        clientSocket = new TCPSocket(requestAddress, this.router, this.verbose, false);
 
-            return clientSocket;
-
+        // Forward SYN packet to new server-side TCPSocket client
+        try {
+            clientSocket.forward(SYNPacket);
         } catch (IOException e) {
             e.printStackTrace();
         }
 
-        return null;
+        log("TCPServerSocket.accept()", "Client socket created. Sending SYNACK and waiting for ACK ...");
+
+        // Wait for Listener thread to put in ACK packet
+        while(true) {
+            if (!ackQueue.isEmpty()) {
+                Packet ACK = ackQueue.poll();
+                if (ACK.getPeerAddress().equals(requestAddress.getAddress())
+                    && ACK.getPeerPort() == requestAddress.getPort()) {
+                    break;
+                }
+            }
+        }
+
+        log("TCPServerSocket.accept()", "Received ACK from client. Client is now connected.");
+
+        this.clients.put(requestAddress, clientSocket);
+
+        return clientSocket;
     }
 
+    /**
+     * Sets the verbosity of the TCPServerSocket
+     * @param verbose
+     */
     public void setVerbose(boolean verbose) {
         this.verbose = verbose;
     }
 
-    private void log(String method, String str) {
+    /**
+     * Prints verbose debugging outputs.
+     *
+     * @param method The current method that the log is coming from.
+     * @param message The message to be printed.
+     */
+    private void log(String method, String message) {
         if (this.verbose) {
             DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd:MM:yyy HH:mm:ss");
             LocalDateTime now = LocalDateTime.now();
-            System.out.println(String.format("[%s] %s -- %s", dtf.format(now), method , str));
+            System.out.println(String.format("[%s] %s -- %s", dtf.format(now), method , message));
         }
     }
 
-    private synchronized void setRequestAddress(InetSocketAddress addr) {
-        this.requestAddr = addr;
-    }
-
+    /**
+     * The Listener thread continuously listens for incoming packets.
+     */
     private class Listener extends Thread {
         @Override
         public void run() {
@@ -130,7 +153,8 @@ public class TCPServerSocket {
                     }
 
                     // Create Packet from buffer
-                    packetQueue.add(Packet.fromBuffer(buf));
+                    Packet p = Packet.fromBuffer(buf);
+                    packetQueue.add(p);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -138,6 +162,10 @@ public class TCPServerSocket {
         }
     }
 
+    /**
+     * The Processor thread receives a Packet from the Listener thread and determines where it should go
+     * depending on its type.
+     */
     private class Processor extends Thread {
         @Override
         public void run() {
@@ -156,6 +184,7 @@ public class TCPServerSocket {
                                 break;
                             case Packet.ACK:
                                 ackQueue.add(packet);
+                            case Packet.FIN:
                             case Packet.DATA:
                             case Packet.NAK:
                                 forward(packet, peerAddr);
@@ -168,15 +197,25 @@ public class TCPServerSocket {
             }
         }
 
+        /**
+         * Forwards incoming packets to the appropriate TCPSocket client.
+         * @param packet   Packet of data.
+         * @param peerAddr Address of the requesting client.
+         * @throws IOException
+         */
         private void forward(Packet packet, InetSocketAddress peerAddr) throws IOException {
-            // Wait until the client socket has been added to the clients map.
-            while (!clients.containsKey(peerAddr));
+            if (clients.containsKey(peerAddr)) {
+                // Get server-side TCPSocket client
+                TCPSocket clientSocket = clients.get(peerAddr);
 
-            // Get address of server-side TCPSocket client
-            TCPSocket clientSocket = clients.get(peerAddr);
-
-            // Send packet to client
-            clientSocket.forward(packet);
+                if (clientSocket.isRunning()) {
+                    // Send packet to client
+                    clientSocket.forward(packet);
+                } else {
+                    // Remove client from list
+                    clients.remove(peerAddr);
+                }
+            }
         }
     }
 }

@@ -257,13 +257,13 @@ public class httpc {
         StringBuilder headers = new StringBuilder();
         StringBuilder body = new StringBuilder();
         String response = this.socket.read();
-        String[] lines = response.trim().split("\n");
+        String[] lines = response.split("\n");
 
         // System.out.println("**** A BUILDING RESPONSE **** ");
         boolean isHeader = true;
         int pos = 0;
         while (pos < lines.length) {
-            String line = lines[pos].trim();
+            String line = lines[pos].replaceFirst("\\s++$", "");
             pos++;
 
             if (isHeader)
