@@ -9,4 +9,4 @@ echo ""
 exit 1
 fi
 javac -sourcepath src src/$1.java -d bin
-java -cp bin/ $1 ${@:2}
+java -cp bin $1 ${@:2}

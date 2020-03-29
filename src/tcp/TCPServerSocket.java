@@ -3,6 +3,7 @@ package tcp;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,6 +13,7 @@ import java.net.InetAddress;
 import java.net.SocketAddress;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -115,6 +117,26 @@ public class TCPServerSocket {
         this.verbose = verbose;
     }
 
+    public boolean isRunning() {
+        return this.listener.isAlive() && this.processor.isAlive();
+    }
+
+    public void close() {
+        try {
+        this.listener.close();
+        this.processor.close();
+
+        this.listener.join();
+        this.processor.join();
+
+        log("TCPServerSocket.close()", "Server Socket closed.");
+        this.socket.close();
+        } catch(InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+
     /**
      * Prints verbose debugging outputs.
      *
@@ -133,6 +155,8 @@ public class TCPServerSocket {
      * The Listener thread continuously listens for incoming packets.
      */
     private class Listener extends Thread {
+        private AtomicBoolean running = new AtomicBoolean(true);
+
         @Override
         public void run() {
             while (true) {
@@ -141,20 +165,36 @@ public class TCPServerSocket {
                     byte[] buf = new byte[Packet.PACKET_SIZE];
                     DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
-                    // Wait for packet
-                    socket.receive(packet);
+                    socket.setSoTimeout(100);
+                    try {
+                        if (!running.get()) {
+                            break;
+                        }
+
+                        // Wait for client to send datagram packet
+                        socket.receive(packet);
+
+                        // Create Packet from buffer
+                        processor.put(Packet.fromBuffer(buf));
+                    } catch (SocketTimeoutException e) {
+                        continue;
+                    }
 
                     if (router == null) {
                         // Get return address to router
                         router = new InetSocketAddress(packet.getAddress(), packet.getPort());
                     }
-
-                    // Create Packet from buffer
-                    processor.put(Packet.fromBuffer(buf));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
+        }
+
+        /**
+         * Stops thread
+         */
+        public void close() {
+            this.running.set(false);
         }
     }
 
@@ -164,6 +204,7 @@ public class TCPServerSocket {
      */
     private class Processor extends Thread {
         private ArrayBlockingQueue<Packet> packetQueue;
+        private AtomicBoolean running = new AtomicBoolean(true);
 
         /**
          * Constructor for the Processor thread
@@ -174,7 +215,7 @@ public class TCPServerSocket {
 
         @Override
         public void run() {
-            while(true) {
+            while(running.get()) {
                 if (!packetQueue.isEmpty()) {
                     try {
                         Packet packet = packetQueue.poll();
@@ -208,6 +249,13 @@ public class TCPServerSocket {
          */
         public void put(Packet packet) {
             this.packetQueue.add(packet);
+        }
+
+        /**
+         * Stops thread
+         */
+        public void close() {
+            this.running.set(false);
         }
 
         /**

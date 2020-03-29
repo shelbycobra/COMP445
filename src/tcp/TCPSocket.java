@@ -98,7 +98,7 @@ public class TCPSocket {
 
         Packet packet = this.receiver.readFromReadQueue();
 
-        return new String(packet.getPayload());
+        return new String(packet.getPayload()).trim();
     }
 
     /**
